@@ -163,7 +163,7 @@ export const comparison: Comparison = {
           competitor: linkedCell(
             "yes",
             "Devin web app",
-            "https://docs.devin.ai/work-with-devin/devin-handoff",
+            "https://docs.devin.ai/get-started/first-run",
           ),
         },
       ],
