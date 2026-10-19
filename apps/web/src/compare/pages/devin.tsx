@@ -17,9 +17,9 @@ export const comparison: Comparison = {
   ...meta,
   title: "bb vs Devin: An Open-Source Workspace for Your Coding Agents",
   description:
-    "Compare bb and Devin. Run Claude Code, Codex, and other coding agents together in a free, open-source workspace, using your existing AI plans.",
+    "Compare bb and Devin. In bb, agents run the work you ask for and build plugins that change the app, in a free, open-source workspace that uses your existing AI plans.",
   headline: "The open-source Devin alternative",
-  sub: "Bring Claude Code, Codex, and your existing AI plans. Let your agents work together in one free workspace you can make your own.",
+  sub: "Ask agents to run the work for you, and have them build plugins that change the app. One free, open-source workspace that uses the AI plans you already have.",
   heroVisual: <FleetVisual />,
   tailored: {
     title: "Keep the agents you already trust",
@@ -41,7 +41,8 @@ export const comparison: Comparison = {
     wide: true,
   },
   sections: [agentsSection(AGENTS_COPY)],
-  tableNote: null,
+  tableNote:
+    "Checked October 19, 2026. Devin links point to its current documentation; plans and features can change.",
   table: [
     {
       title: "Price and ownership",
@@ -49,10 +50,13 @@ export const comparison: Comparison = {
         {
           feature: "Price",
           bb: price("$0", "App is free; AI plans and hosting are separate"),
-          competitor: price(
-            "$0 / $20 / $200",
-            "Free / Pro / Max per month; paid plans include usage",
-          ),
+          competitor: {
+            ...price(
+              "$0 / $20 / $200",
+              "Free / Pro / Max per month; paid plans include usage",
+            ),
+            href: "https://devin.ai/pricing",
+          },
         },
         {
           feature: "Use your existing AI plans",
@@ -67,8 +71,8 @@ export const comparison: Comparison = {
           ...BB_ROWS.license,
           competitor: linkedCell(
             "no",
-            "Proprietary product; some integrations are open source",
-            "https://github.com/CognitionAI",
+            "Licensed under Cognition’s platform terms",
+            "https://cognition.com/legal/platform-terms-of-service",
           ),
         },
       ],
@@ -156,7 +160,11 @@ export const comparison: Comparison = {
         },
         {
           ...BB_ROWS.webAccess,
-          competitor: cell("yes", "Devin web app"),
+          competitor: linkedCell(
+            "yes",
+            "Devin web app",
+            "https://docs.devin.ai/work-with-devin/devin-handoff",
+          ),
         },
       ],
     },
@@ -170,8 +178,10 @@ export const comparison: Comparison = {
           question: "What’s different about bb and Devin?",
           answer: (
             <p>
-              bb is a workspace for coding agents such as Claude Code, Codex,
-              and Pi. Each runs with its own tools and account, and agents can
+              bb is an open-source workspace where agents run work for you and
+              build plugins that change the app. It works with coding agents
+              such as Claude Code, Codex, and Pi. Each runs with its own tools
+              and account, and agents can
               start and message one another. Devin is a coding agent with a
               choice of models, local tools, and cloud sessions. bb gives you
               one place to work with the agents you already use, plus an
