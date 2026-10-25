@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e17a334b-0b0d-4d0a-a3fc-39e3baeeadfc",
-  "prevId": "030e660f-5550-4717-b3f2-6951cb5a8d23",
+  "id": "7d0093af-15d4-4b46-819a-49f038d624ae",
+  "prevId": "35f1f628-fc77-4e47-9ae7-6fb1b8c2655c",
   "tables": {
     "app_settings": {
       "name": "app_settings",
@@ -452,33 +452,33 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "authentik_identities": {
-      "name": "authentik_identities",
+    "diff_viewed_files": {
+      "name": "diff_viewed_files",
       "columns": {
-        "issuer": {
-          "name": "issuer",
+        "environment_id": {
+          "name": "environment_id",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "subject": {
-          "name": "subject",
+        "target_key": {
+          "name": "target_key",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "user_id": {
-          "name": "user_id",
+        "path": {
+          "name": "path",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
+        "revision": {
+          "name": "revision",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -491,22 +491,14 @@
           "autoincrement": false
         }
       },
-      "indexes": {
-        "authentik_identities_user_idx": {
-          "name": "authentik_identities_user_idx",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": true
-        }
-      },
+      "indexes": {},
       "foreignKeys": {
-        "authentik_identities_user_id_user_id_fk": {
-          "name": "authentik_identities_user_id_user_id_fk",
-          "tableFrom": "authentik_identities",
-          "tableTo": "user",
+        "diff_viewed_files_environment_id_environments_id_fk": {
+          "name": "diff_viewed_files_environment_id_environments_id_fk",
+          "tableFrom": "diff_viewed_files",
+          "tableTo": "environments",
           "columnsFrom": [
-            "user_id"
+            "environment_id"
           ],
           "columnsTo": [
             "id"
@@ -516,12 +508,13 @@
         }
       },
       "compositePrimaryKeys": {
-        "authentik_identities_issuer_subject_pk": {
+        "diff_viewed_files_environment_id_target_key_path_pk": {
           "columns": [
-            "issuer",
-            "subject"
+            "environment_id",
+            "target_key",
+            "path"
           ],
-          "name": "authentik_identities_issuer_subject_pk"
+          "name": "diff_viewed_files_environment_id_target_key_path_pk"
         }
       },
       "uniqueConstraints": {},
@@ -4117,6 +4110,14 @@
           ],
           "isUnique": false
         },
+        "terminal_sessions_status_thread_idx": {
+          "name": "terminal_sessions_status_thread_idx",
+          "columns": [
+            "status",
+            "thread_id"
+          ],
+          "isUnique": false
+        },
         "terminal_sessions_host_status_idx": {
           "name": "terminal_sessions_host_status_idx",
           "columns": [
@@ -4315,245 +4316,6 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "thread_invites": {
-      "name": "thread_invites",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "accepted_by_user_id": {
-          "name": "accepted_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "accepted_at": {
-          "name": "accepted_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "thread_invites_token_hash_idx": {
-          "name": "thread_invites_token_hash_idx",
-          "columns": [
-            "token_hash"
-          ],
-          "isUnique": true
-        },
-        "thread_invites_thread_idx": {
-          "name": "thread_invites_thread_idx",
-          "columns": [
-            "thread_id",
-            "created_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "thread_invites_thread_id_threads_id_fk": {
-          "name": "thread_invites_thread_id_threads_id_fk",
-          "tableFrom": "thread_invites",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_invites_created_by_user_id_user_id_fk": {
-          "name": "thread_invites_created_by_user_id_user_id_fk",
-          "tableFrom": "thread_invites",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_invites_accepted_by_user_id_user_id_fk": {
-          "name": "thread_invites_accepted_by_user_id_user_id_fk",
-          "tableFrom": "thread_invites",
-          "tableTo": "user",
-          "columnsFrom": [
-            "accepted_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "thread_participants": {
-      "name": "thread_participants",
-      "columns": {
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "thread_participants_user_idx": {
-          "name": "thread_participants_user_idx",
-          "columns": [
-            "user_id",
-            "thread_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "thread_participants_thread_id_threads_id_fk": {
-          "name": "thread_participants_thread_id_threads_id_fk",
-          "tableFrom": "thread_participants",
-          "tableTo": "threads",
-          "columnsFrom": [
-            "thread_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "thread_participants_user_id_user_id_fk": {
-          "name": "thread_participants_user_id_user_id_fk",
-          "tableFrom": "thread_participants",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "thread_participants_thread_id_user_id_pk": {
-          "columns": [
-            "thread_id",
-            "user_id"
-          ],
-          "name": "thread_participants_thread_id_user_id_pk"
-        }
-      },
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
@@ -5507,73 +5269,6 @@
       },
       "indexes": {},
       "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "user_sessions": {
-      "name": "user_sessions",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "user_sessions_user_idx": {
-          "name": "user_sessions_user_idx",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
-        },
-        "user_sessions_expiry_idx": {
-          "name": "user_sessions_expiry_idx",
-          "columns": [
-            "expires_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "user_sessions_user_id_user_id_fk": {
-          "name": "user_sessions_user_id_user_id_fk",
-          "tableFrom": "user_sessions",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}

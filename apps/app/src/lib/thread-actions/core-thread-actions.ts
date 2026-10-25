@@ -11,10 +11,14 @@ import { useThreadActions } from "@/components/thread/ThreadActionsProvider";
 import { useRouteState } from "@/hooks/useRouteState";
 import { copyToClipboardWithToast } from "@/lib/clipboard";
 import { showMutationErrorToast } from "@/lib/mutation-errors";
-import { resolveThread } from "@/lib/plugin-sidebar-hooks";
+import { resolveThread } from "@/lib/cached-thread";
 import { getThreadRoutePath } from "@/lib/route-paths";
 import { countPanes, listPanes } from "@/lib/split-layout";
 import { splitLayoutAtom } from "@/lib/split-layout/atoms";
+import {
+  canManageThreadSharing,
+  useThreadAccessRoles,
+} from "@/hooks/queries/thread-access-queries";
 
 function coreThreadAction<Data>(
   registration: PluginThreadActionRegistration<Data>,
@@ -201,12 +205,22 @@ export const CORE_THREAD_ACTIONS: readonly PluginThreadActionRegistration<unknow
       order: 30,
       title: "Share",
       icon: "Share",
-      useData: useLifecycleHandlers,
-      item: ({ thread, data }) => ({
-        label: "Share",
-        icon: "Share",
-        run: () => afterMenuCloses(() => void data.requestShare(thread.id)),
+      useData: ({ threadIds }) => ({
+        handlers: useLifecycleHandlers(),
+        roles: useThreadAccessRoles(threadIds),
       }),
+      item: ({ thread, data }) => {
+        const role = data.roles.get(thread.id);
+        if (!canManageThreadSharing(role)) {
+          return null;
+        }
+        return {
+          label: "Share",
+          icon: "Share",
+          run: () =>
+            afterMenuCloses(() => void data.handlers.requestShare(thread.id)),
+        };
+      },
     }),
     coreThreadAction({
       id: "read",

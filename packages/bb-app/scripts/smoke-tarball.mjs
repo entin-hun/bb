@@ -3,15 +3,25 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, readdirSync } from "node:fs";
 import {
   copyFile,
+  cp,
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   writeFile,
 } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import {
+  basename,
+  dirname,
+  extname,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 import { fileURLToPath } from "node:url";
 import { createManagedProcessStop } from "./managed-process.mjs";
 
@@ -355,16 +365,28 @@ async function acceptHostDaemonStatusResponse(response, expectedServerUrl) {
   );
 }
 
+async function readHostDaemonLogs(logDir) {
+  let entries;
+  try {
+    entries = await readdir(logDir);
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    return "";
+  }
+  const contents = await Promise.all(
+    entries
+      .filter((name) => /^host-daemon\.\d+\.log$/u.test(name))
+      .map((name) => readFile(join(logDir, name), "utf8")),
+  );
+  return contents.join("");
+}
+
 async function waitForHostPluginWorker({ dataDir, pluginId, processRef }) {
-  const logPath = join(dataDir, "logs", "host-daemon-stdio.log");
+  const logDir = join(dataDir, "logs");
   let daemonOutput = "";
   const deadline = Date.now() + HOST_PLUGIN_WORKER_TIMEOUT_MS;
   while (Date.now() <= deadline) {
-    try {
-      daemonOutput = await readFile(logPath, "utf8");
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+    daemonOutput = await readHostDaemonLogs(logDir);
     if (
       daemonOutput
         .split("\n")
@@ -381,13 +403,13 @@ async function waitForHostPluginWorker({ dataDir, pluginId, processRef }) {
       processRef.childProcess.signalCode !== null
     ) {
       throw new Error(
-        `${processRef.label} exited before host plugin ${pluginId} started\n${formatProcessOutput(processRef.output)}\n${logPath}:\n${daemonOutput}`,
+        `${processRef.label} exited before host plugin ${pluginId} started\n${formatProcessOutput(processRef.output)}\n${logDir}/host-daemon.N.log:\n${daemonOutput}`,
       );
     }
     await delay(HTTP_WAIT_INTERVAL_MS);
   }
   throw new Error(
-    `Timed out waiting for host plugin ${pluginId} on ${processRef.label}\n${formatProcessOutput(processRef.output)}\n${logPath}:\n${daemonOutput}`,
+    `Timed out waiting for host plugin ${pluginId} on ${processRef.label}\n${formatProcessOutput(processRef.output)}\n${logDir}/host-daemon.N.log:\n${daemonOutput}`,
   );
 }
 
@@ -424,7 +446,18 @@ async function smokeNpxEntrypoint(tarballPath) {
 }
 
 async function packTarball() {
-  const chunkDir = join(packageRoot, "host-daemon", "dist", "bb-chunks");
+  const packRoot =
+    process.platform === "linux" ? join(tempRoot, "package") : packageRoot;
+  if (packRoot !== packageRoot) {
+    await cp(packageRoot, packRoot, {
+      recursive: true,
+      filter: (source) =>
+        !["node_modules", ".turbo"].includes(
+          relative(packageRoot, source).split(sep)[0],
+        ),
+    });
+  }
+  const chunkDir = join(packRoot, "host-daemon", "dist", "bb-chunks");
   const liveChunk = readdirSync(chunkDir).find((name) => name.endsWith(".js"));
   if (liveChunk === undefined) {
     throw new Error("Built bb-app has no CLI chunk to exercise");
@@ -436,7 +469,7 @@ async function packTarball() {
   await copyFile(join(chunkDir, liveChunk), staleChunk);
   try {
     const stdout = await runCommand({
-      args: ["pack", packageRoot, "--pack-destination", tempRoot, "--json"],
+      args: ["pack", packRoot, "--pack-destination", tempRoot, "--json"],
       command: "npm",
       label: "npm pack",
     });
@@ -1249,7 +1282,7 @@ try {
   const smokeStartedAt = performance.now();
   const tarballPath = await timed("npm pack", () => packTarball());
   let sdkDir;
-  if (process.platform === "win32") {
+  if (process.platform === "win32" || process.platform === "linux") {
     const [npxResult, sdkResult] = await Promise.allSettled([
       timed("npx entrypoint", () => smokeNpxEntrypoint(tarballPath)),
       timed("sdk package", () => smokeSdkPackage(tarballPath)),
@@ -1274,8 +1307,18 @@ try {
   await timed("plugin host worker bundle", () =>
     smokePluginHostWorkerBundle(installedPackageDir),
   );
-  await timed("full stack", () => smokeFullStack(installedBinDir, sdkDir));
-  await timed("daemon join", () => smokeDaemonJoin(installedBinDir));
+  if (process.platform === "linux") {
+    const results = await Promise.allSettled([
+      timed("full stack", () => smokeFullStack(installedBinDir, sdkDir)),
+      timed("daemon join", () => smokeDaemonJoin(installedBinDir)),
+    ]);
+    for (const result of results) {
+      if (result.status === "rejected") throw result.reason;
+    }
+  } else {
+    await timed("full stack", () => smokeFullStack(installedBinDir, sdkDir));
+    await timed("daemon join", () => smokeDaemonJoin(installedBinDir));
+  }
   process.stdout.write(
     `bb-app tarball smoke passed in ${formatElapsed(smokeStartedAt)}\n`,
   );

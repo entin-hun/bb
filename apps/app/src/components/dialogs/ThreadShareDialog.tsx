@@ -16,6 +16,11 @@ import { Input } from "@bb/shared-ui/input";
 import { sdk } from "@/lib/sdk";
 import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import { appToast } from "@/components/ui/app-toast";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  canManageThreadSharing,
+  threadAccessQueryKey,
+} from "@/hooks/queries/thread-access-queries";
 
 export interface ThreadShareDialogTarget {
   id: string;
@@ -29,6 +34,7 @@ export function ThreadShareDialog({
   target: ThreadShareDialogTarget | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
   const [access, setAccess] = useState<ThreadAccessResponse | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<ThreadInviteRole>("member");
@@ -37,7 +43,9 @@ export function ThreadShareDialog({
   const [error, setError] = useState<string | null>(null);
 
   const refresh = async (threadId: string) => {
-    setAccess(await sdk.threads.access.get({ threadId }));
+    const nextAccess = await sdk.threads.access.get({ threadId });
+    setAccess(nextAccess);
+    queryClient.setQueryData(threadAccessQueryKey(threadId), nextAccess);
   };
 
   useEffect(() => {
@@ -86,63 +94,65 @@ export function ThreadShareDialog({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
-              <Input
-                aria-label="Email address"
-                placeholder="person@example.com"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-              <select
-                aria-label="Role"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={role}
-                onChange={(event) =>
-                  setRole(event.target.value as ThreadInviteRole)
-                }
-              >
-                <option value="maintainer">Maintainer</option>
-                <option value="member">Member</option>
-                <option value="viewer">Viewer</option>
-              </select>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={pending || email.trim() === ""}
-                onClick={() =>
-                  void run(async () => {
-                    await sdk.threads.access.addParticipant({
-                      email: email.trim(),
-                      role,
-                      threadId: target.id,
-                    });
-                    setEmail("");
-                    await refresh(target.id);
-                  })
-                }
-              >
-                Add existing user
-              </Button>
-              <Button
-                type="button"
-                disabled={pending}
-                onClick={() =>
-                  void run(async () => {
-                    const created = await sdk.threads.access.createInvite({
-                      email: email.trim() === "" ? null : email.trim(),
-                      expiresInHours: 24,
-                      role,
-                      threadId: target.id,
-                    });
-                    setInviteUrl(created.url);
-                    await refresh(target.id);
-                  })
-                }
-              >
-                Create invite
-              </Button>
-            </div>
+            {access !== null && canManageThreadSharing(access.currentRole) ? (
+              <div className="grid gap-2 sm:grid-cols-[1fr_9rem]">
+                <Input
+                  aria-label="Email address"
+                  placeholder="person@example.com"
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+                <select
+                  aria-label="Role"
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                  value={role}
+                  onChange={(event) =>
+                    setRole(event.target.value as ThreadInviteRole)
+                  }
+                >
+                  <option value="maintainer">Maintainer</option>
+                  <option value="member">Member</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending || email.trim() === ""}
+                  onClick={() =>
+                    void run(async () => {
+                      await sdk.threads.access.addParticipant({
+                        email: email.trim(),
+                        role,
+                        threadId: target.id,
+                      });
+                      setEmail("");
+                      await refresh(target.id);
+                    })
+                  }
+                >
+                  Add existing user
+                </Button>
+                <Button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    void run(async () => {
+                      const created = await sdk.threads.access.createInvite({
+                        email: email.trim() === "" ? null : email.trim(),
+                        expiresInHours: 24,
+                        role,
+                        threadId: target.id,
+                      });
+                      setInviteUrl(created.url);
+                      await refresh(target.id);
+                    })
+                  }
+                >
+                  Create invite
+                </Button>
+              </div>
+            ) : null}
 
             {inviteUrl === null ? null : (
               <div className="grid gap-2">

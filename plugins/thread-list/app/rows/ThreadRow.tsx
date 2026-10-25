@@ -4,7 +4,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -74,7 +73,6 @@ import {
   SIDEBAR_HOVER_ACTIONS_CLASS,
   SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
   SIDEBAR_HOVER_ACTIONS_INSET_CLASS,
-  SIDEBAR_HOVER_ACTIONS_MASK_CLASS,
   SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
 } from "@/components/ui/sidebar-hover-actions";
 import type { ConsumeDragClickSuppression } from "@/components/ui/use-drag-click-suppression";
@@ -103,6 +101,13 @@ import { SidebarThreadDragChip } from "../dnd/sidebarThreadDragChip.js";
 import { SplitPaneMiniMap } from "@/components/ui/split-pane-mini-map";
 import { ThreadRowQuickActions } from "./ThreadRowQuickActions.js";
 import { toThreadActionTarget } from "./threadActionTarget.js";
+import {
+  useIsSelectionHidingActiveRow,
+  useIsThreadSelected,
+  useMultiSelectionContaining,
+  useThreadSelectionStore,
+} from "../selection/threadSelection.js";
+import { ThreadSelectionContextMenu } from "../selection/ThreadSelectionContextMenu.js";
 import { useOpenThreadInSplit } from "./threadRowNavigation.js";
 import { Button } from "@/components/ui/button";
 import { COARSE_POINTER_ICON_SIZE_CLASS } from "@/components/ui/coarse-pointer-sizing";
@@ -176,6 +181,7 @@ interface ThreadRowContainerArgs {
   dragBindings?: SidebarSortableDragBindings;
   nestTargetState: SidebarNestTargetState | null;
   reorderPlacement: SidebarReorderPlacement | null;
+  selected: boolean;
   onClick?: MouseEventHandler<HTMLDivElement>;
   onClickCapture?: ThreadRowClickCaptureHandler;
   onSplitDragPointerDown?: PointerEventHandler<HTMLElement>;
@@ -204,61 +210,6 @@ function getHoverActionsInsetStyle(actionCount: number): CSSProperties {
   } as CSSProperties;
 }
 
-function measureDisclosureClearance(
-  content: HTMLElement,
-  actions: HTMLElement | null,
-): number | null {
-  const toggle = content.querySelector("button[aria-expanded]");
-  const trigger = actions?.querySelector("[data-thread-actions-trigger]");
-  const controls = trigger?.parentElement;
-  const firstAction = controls?.firstElementChild;
-  const lastAction = trigger?.previousElementSibling;
-  if (!toggle || !trigger || !controls || !firstAction || !lastAction) {
-    return null;
-  }
-  const toggleRect = toggle.getBoundingClientRect();
-  const triggerRect = trigger.getBoundingClientRect();
-  if (toggleRect.width === 0 || triggerRect.width === 0) return null;
-  const gap = Number.parseFloat(getComputedStyle(controls).columnGap) || 0;
-  const restingActionsLeft =
-    triggerRect.left -
-    gap -
-    (lastAction.getBoundingClientRect().right -
-      firstAction.getBoundingClientRect().left);
-  return toggleRect.right + gap > restingActionsLeft
-    ? Math.ceil(triggerRect.left - toggleRect.left)
-    : null;
-}
-
-function useDisclosureActionsClearance(enabled: boolean, actionCount: number) {
-  const contentRef = useRef<HTMLSpanElement>(null);
-  const titleRef = useRef<HTMLSpanElement>(null);
-  const actionsRef = useRef<HTMLDivElement>(null);
-  const [clearance, setClearance] = useState<number | null>(null);
-  useLayoutEffect(() => {
-    const content = contentRef.current;
-    const title = titleRef.current;
-    if (
-      !enabled ||
-      !content ||
-      !title ||
-      typeof ResizeObserver === "undefined"
-    ) {
-      return;
-    }
-    const observer = new ResizeObserver(() =>
-      setClearance(measureDisclosureClearance(content, actionsRef.current)),
-    );
-    observer.observe(content);
-    observer.observe(title);
-    return () => {
-      observer.disconnect();
-      setClearance(null);
-    };
-  }, [enabled, actionCount]);
-  return { contentRef, titleRef, actionsRef, clearance };
-}
-
 function getThreadRowStyle(depth: number): CSSProperties {
   return {
     paddingLeft: getSidebarThreadRowPaddingLeft(depth),
@@ -275,6 +226,7 @@ function renderThreadRowContainer({
   onClickCapture,
   onSplitDragPointerDown,
   reorderPlacement,
+  selected,
   stickyLevel,
   style,
 }: ThreadRowContainerArgs) {
@@ -284,6 +236,7 @@ function renderThreadRowContainer({
     style,
     "data-sidebar-nest-target": nestTargetState ?? undefined,
     "data-sidebar-reorder-placement": reorderPlacement ?? undefined,
+    "data-sidebar-thread-selected": selected ? "" : undefined,
     ...dragBindings?.attributes,
     ...(dragBindings?.listeners ?? {}),
     onClick,
@@ -431,6 +384,10 @@ function ThreadRowComponent({
   const [isContextActionsOpen, setIsContextActionsOpen] = useState(false);
   const sdk = useSdk();
   const openThreadInSplit = useOpenThreadInSplit();
+  const selectionStore = useThreadSelectionStore();
+  const isSelected = useIsThreadSelected(thread.id);
+  const selectionHidesActive = useIsSelectionHidingActiveRow(isActive);
+  const multiSelection = useMultiSelectionContaining(thread.id);
   const showProviderIcons = useAtomValue(sidebarShowProviderIconsAtom);
   const providers = useContext(SidebarProvidersContext);
   const provider = showProviderIcons
@@ -441,7 +398,7 @@ function ThreadRowComponent({
   const { hasUnsubmittedDraft: hasComposerDraft } = useSidebarThreadDraft(
     thread.id,
   );
-  const showActive = isActive;
+  const showActive = isSelected || (isActive && !selectionHidesActive);
   const threadStatus = threadListIndicatorStateForThread(
     thread,
     hasComposerDraft,
@@ -481,7 +438,10 @@ function ThreadRowComponent({
   );
   const miniMap = useThreadSplitMiniMap(thread.id);
   const isOpenInSplit = miniMap !== null;
-  const split = experimental_useSidebarThreadSplit(thread.id);
+  const split = experimental_useSidebarThreadSplit(
+    thread.id,
+    multiSelection === null ? undefined : { dragThreadIds: multiSelection },
+  );
   const onSplitDragPointerDown = split.splitProps.onPointerDown;
   const splitAvailable = split.isAvailable;
   const openInSplit = useCallback(() => {
@@ -527,14 +487,7 @@ function ThreadRowComponent({
     parentOptions?.childActivity ?? NO_COLLAPSED_CHILD_ACTIVITY;
   const hasChildren = childCount > 0;
   const reserveActionSpace =
-    crossProjectLabel !== null ||
-    (isParentRow && hasChildren && thread.archivedAt !== null);
-  const overlayActionsBesideDisclosure =
-    isParentRow && hasChildren && !reserveActionSpace;
-  const disclosureActions = useDisclosureActionsClearance(
-    overlayActionsBesideDisclosure && !shortcut,
-    quickActions.length,
-  );
+    crossProjectLabel !== null || (isParentRow && hasChildren);
   const hasHiddenChildren = isParentRow && isParentCollapsed && hasChildren;
   const hiddenChildrenHaveDraft = useThreadsHaveDraft(
     hasHiddenChildren ? childActivity.threadIds : NO_THREAD_IDS,
@@ -643,9 +596,12 @@ function ThreadRowComponent({
         if (!event.target.closest("[data-sidebar-thread-trailing]")) return;
         if (event.target.closest("a, button")) return;
       }
+      if (selectionStore.handleClick(thread.id, event, event.currentTarget)) {
+        return;
+      }
       rowLinkRef.current?.click();
     },
-    [],
+    [selectionStore, thread.id],
   );
   const handleActionsMenuCloseAutoFocus = (event: Event) => {
     const begin = pendingMenuCustomize.current;
@@ -668,7 +624,6 @@ function ThreadRowComponent({
         />
       ) : null}
       <span
-        ref={disclosureActions.contentRef}
         className={cn(
           "relative flex min-w-0 flex-1 items-center gap-1.5 self-stretch",
           !isActionsOpen &&
@@ -676,7 +631,6 @@ function ThreadRowComponent({
           !shortcut &&
             !isEditing &&
             !isCustomizingActions &&
-            !overlayActionsBesideDisclosure &&
             (reserveActionSpace
               ? "pr-(--bb-sidebar-hover-actions-inset) [@media(hover:none)]:pr-0"
               : SIDEBAR_HOVER_ACTIONS_INSET_CLASS),
@@ -692,6 +646,13 @@ function ThreadRowComponent({
           data-sidebar-rename-anchor=""
           onClick={(event) => {
             if (isEditing) {
+              event.preventDefault();
+              event.stopPropagation();
+              return;
+            }
+            if (
+              selectionStore.handleClick(thread.id, event, event.currentTarget)
+            ) {
               event.preventDefault();
               event.stopPropagation();
               return;
@@ -717,14 +678,11 @@ function ThreadRowComponent({
           className="absolute inset-0 rounded-md outline-none"
         />
         <span
-          ref={disclosureActions.titleRef}
           className={cn(
             "pointer-events-none relative flex min-w-0 items-center self-stretch",
             ((crossProjectLabel === null && (!parentOptions || !hasChildren)) ||
               isEditing) &&
               "flex-1",
-            disclosureActions.clearance !== null &&
-              SIDEBAR_HOVER_ACTIONS_MASK_CLASS,
           )}
         >
           {provider ? (
@@ -791,7 +749,7 @@ function ThreadRowComponent({
         {parentOptions && hasChildren ? (
           <SidebarChildToggleChevron
             disabled={isEditing}
-            className={isEditing ? "hidden" : "z-[11]"}
+            className={isEditing ? "hidden" : undefined}
             isCollapsed={isParentCollapsed}
             expandLabel={`Expand ${labelTitle} threads`}
             collapseLabel={`Collapse ${labelTitle} threads`}
@@ -899,7 +857,6 @@ function ThreadRowComponent({
                 )}
               </span>
               <div
-                ref={disclosureActions.actionsRef}
                 data-sidebar-hover-actions-open={
                   isActionsOpen ? "true" : undefined
                 }
@@ -907,16 +864,7 @@ function ThreadRowComponent({
                   SIDEBAR_HOVER_ACTIONS_CLASS,
                   "absolute inset-y-0 right-0 z-10 flex items-center justify-end [@media(hover:none)]:hidden",
                   isEditing && "invisible pointer-events-none",
-                  disclosureActions.clearance !== null &&
-                    "[&_[data-thread-actions-trigger]]:ml-(--bb-sidebar-disclosure-clearance)",
                 )}
-                style={
-                  disclosureActions.clearance === null
-                    ? undefined
-                    : ({
-                        "--bb-sidebar-disclosure-clearance": `${disclosureActions.clearance}px`,
-                      } as CSSProperties)
-                }
               >
                 <SidebarRowControls
                   primaryAction={
@@ -957,6 +905,7 @@ function ThreadRowComponent({
     dragBindings: rowDragBindings,
     nestTargetState,
     reorderPlacement,
+    selected: isSelected,
     onClick: isEditing ? undefined : handleRowClick,
     onClickCapture:
       !isEditing && options.consumeClickSuppression
@@ -974,10 +923,20 @@ function ThreadRowComponent({
       requestRename={requestRenameFromMenu}
       onOpenChange={setIsContextActionsOpen}
       onCloseAutoFocus={handleActionsMenuCloseAutoFocus}
-      disabled={isEditing}
+      disabled={isEditing || multiSelection !== null}
       dragging={rowDragBindings?.isDragging ?? false}
     >
-      {row}
+      <ThreadSelectionContextMenu
+        threadIds={multiSelection}
+        onOpenChange={setIsContextActionsOpen}
+        disabled={
+          multiSelection === null ||
+          isEditing ||
+          (rowDragBindings?.isDragging ?? false)
+        }
+      >
+        {row}
+      </ThreadSelectionContextMenu>
     </ThreadActionsContextMenu>
   );
 }

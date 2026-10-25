@@ -11,7 +11,6 @@ import {
   type ThreadChangeKind,
   type ThreadChangeMetadata,
   type ThreadEventType,
-  type ThreadTimelineSubscriptionTarget,
 } from "@bb/domain";
 import type { DbNotifier } from "@bb/db";
 import type {
@@ -33,6 +32,12 @@ import {
   type ThreadOpenSplit,
   type TerminalServerMessage,
 } from "@bb/server-contract";
+import {
+  WatchedTargetRegistry,
+  type WatchedTarget,
+  type WatchedTargetChange,
+  type WatchedTargetKind,
+} from "./watched-targets.js";
 
 const TERMINAL_SOCKET_HIGH_WATER_BYTES = 1024 * 1024;
 const TERMINAL_SOCKET_MAX_QUEUE_BYTES = 32 * 1024 * 1024;
@@ -58,7 +63,7 @@ export type ServerChangedMessage =
       ChangedMessage,
       { entity: "thread" | "project" | "environment" | "host" }
     > & { id: string })
-  | Extract<ChangedMessage, { entity: "system" }>;
+  | Extract<ChangedMessage, { entity: "system" | "tags" | "plugin" }>;
 
 type ChangedMessageListener = (message: ServerChangedMessage) => void;
 
@@ -131,6 +136,10 @@ function subscriptionKeysForMessage(message: ServerChangedMessage): string[] {
         subscriptionKey({ kind: "host-list" }),
         subscriptionKey({ kind: "host-detail", hostId: message.id }),
       ];
+    case "plugin":
+      return [subscriptionKey({ kind: "plugin", pluginId: message.pluginId })];
+    case "tags":
+      return [];
     case "system":
       return [subscriptionKey({ kind: "system" })];
   }
@@ -229,16 +238,17 @@ export class HostOnlineRpcUnavailableError extends Error {
 }
 
 export class NotificationHub implements DbNotifier {
-  private readonly clientKeysBySocket = new Map<HubSocket, Set<string>>();
+  private readonly clientKeysBySocket = new Map<
+    HubSocket,
+    Map<string, RealtimeSubscriptionTarget>
+  >();
   private readonly clientThreadAccess = new Map<
     HubSocket,
     ((threadId: string) => boolean) | null
   >();
   private readonly clientSocketsByKey = new Map<string, Set<HubSocket>>();
-  private readonly threadTimelineTargetsByKey = new Map<
-    string,
-    ThreadTimelineSubscriptionTarget
-  >();
+  private readonly hiddenClients = new Set<HubSocket>();
+  private readonly watchedTargets = new WatchedTargetRegistry();
   private readonly daemonSessions = new Map<
     string,
     {
@@ -299,18 +309,75 @@ export class NotificationHub implements DbNotifier {
     PendingThreadListEventsAppended
   >();
 
+  private readonly pendingTags = new Set<string>();
+
+  notifyPluginChanged(pluginId: string, tags: readonly string[] | null): void {
+    this.notifyClients({
+      type: "changed",
+      entity: "plugin",
+      pluginId,
+      tags: tags === null ? null : [...tags],
+    });
+  }
+
+  notifyTags(tags: readonly string[]): void {
+    if (tags.length === 0) return;
+    const scheduled = this.pendingTags.size > 0;
+    for (const tag of tags) this.pendingTags.add(tag);
+    if (scheduled) return;
+    queueMicrotask(() => {
+      const message: ServerChangedMessage = {
+        type: "changed",
+        entity: "tags",
+        tags: [...this.pendingTags],
+      };
+      this.pendingTags.clear();
+      this.notifyClients(message);
+    });
+  }
+
   registerClient(
     socket: HubSocket,
     canAccessThread: ((threadId: string) => boolean) | null = null,
   ): void {
     if (!this.clientKeysBySocket.has(socket)) {
-      this.clientKeysBySocket.set(socket, new Set());
+      this.clientKeysBySocket.set(socket, new Map());
       this.clientThreadAccess.set(socket, canAccessThread);
     }
   }
 
   clientCanAccessThread(socket: HubSocket, threadId: string): boolean {
     return this.clientThreadAccess.get(socket)?.(threadId) ?? true;
+  }
+
+  setClientVisible(socket: HubSocket, visible: boolean): void {
+    this.registerClient(socket);
+    if (visible !== this.hiddenClients.has(socket)) {
+      return;
+    }
+    const targets = this.clientKeysBySocket.get(socket) ?? new Map();
+    if (visible) {
+      this.hiddenClients.delete(socket);
+      this.watchedTargets.update(
+        [...targets].map(([key, target]) => ({ key, target: { ...target } })),
+        [],
+      );
+      return;
+    }
+    this.hiddenClients.add(socket);
+    this.watchedTargets.update(
+      [],
+      [...targets.keys()].filter((key) => !this.isWatched(key)),
+    );
+  }
+
+  private isWatched(key: string): boolean {
+    for (const socket of this.clientSocketsByKey.get(key) ?? []) {
+      if (!this.hiddenClients.has(socket)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   unregisterClient(socket: HubSocket): void {
@@ -320,7 +387,8 @@ export class NotificationHub implements DbNotifier {
       return;
     }
 
-    for (const key of keys) {
+    const stoppedKeys: string[] = [];
+    for (const key of keys.keys()) {
       const sockets = this.clientSocketsByKey.get(key);
       if (!sockets) {
         continue;
@@ -328,12 +396,29 @@ export class NotificationHub implements DbNotifier {
       sockets.delete(socket);
       if (sockets.size === 0) {
         this.clientSocketsByKey.delete(key);
-        this.threadTimelineTargetsByKey.delete(key);
+      }
+      if (!this.isWatched(key)) {
+        stoppedKeys.push(key);
       }
     }
 
     this.clientKeysBySocket.delete(socket);
     this.clientThreadAccess.delete(socket);
+    this.hiddenClients.delete(socket);
+    this.watchedTargets.update([], stoppedKeys);
+  }
+
+  onWatchedTargets<Kind extends WatchedTargetKind>(
+    kinds: readonly Kind[],
+    listener: (change: WatchedTargetChange<WatchedTarget<Kind>>) => void,
+  ): () => void {
+    return this.watchedTargets.listen(kinds, listener);
+  }
+
+  listWatchedTargets<Kind extends WatchedTargetKind>(
+    kind: Kind,
+  ): WatchedTarget<Kind>[] {
+    return this.watchedTargets.list(kind);
   }
 
   onChangedMessage(listener: ChangedMessageListener): () => void {
@@ -550,16 +635,13 @@ export class NotificationHub implements DbNotifier {
   subscribe(socket: HubSocket, target: RealtimeSubscriptionTarget): void {
     this.registerClient(socket);
     const key = subscriptionKey(target);
-    this.clientKeysBySocket.get(socket)?.add(key);
+    this.clientKeysBySocket.get(socket)?.set(key, target);
 
     const sockets = this.clientSocketsByKey.get(key) ?? new Set<HubSocket>();
     sockets.add(socket);
     this.clientSocketsByKey.set(key, sockets);
-    if (
-      target.kind === "thread-timeline" &&
-      !this.threadTimelineTargetsByKey.has(key)
-    ) {
-      this.threadTimelineTargetsByKey.set(key, { ...target });
+    if (!this.hiddenClients.has(socket)) {
+      this.watchedTargets.update([{ key, target: { ...target } }], []);
     }
   }
 
@@ -574,20 +656,10 @@ export class NotificationHub implements DbNotifier {
     sockets.delete(socket);
     if (sockets.size === 0) {
       this.clientSocketsByKey.delete(key);
-      this.threadTimelineTargetsByKey.delete(key);
     }
-  }
-
-  listThreadTimelineTargets(
-    threadId: string,
-  ): ThreadTimelineSubscriptionTarget[] {
-    const targets: ThreadTimelineSubscriptionTarget[] = [];
-    for (const target of this.threadTimelineTargetsByKey.values()) {
-      if (target.threadId === threadId) {
-        targets.push(target);
-      }
+    if (!this.isWatched(key)) {
+      this.watchedTargets.update([], [key]);
     }
-    return targets;
   }
 
   sendThreadTimelineSignal(signal: ThreadTimelineSignal): number {
@@ -1235,7 +1307,9 @@ export class NotificationHub implements DbNotifier {
   }
 
   private notifyClients(message: ServerChangedMessage): void {
-    const sockets = new Set<HubSocket>();
+    const sockets = new Set<HubSocket>(
+      message.entity === "tags" ? this.clientKeysBySocket.keys() : [],
+    );
     for (const key of subscriptionKeysForMessage(message)) {
       const specificSockets = this.clientSocketsByKey.get(key);
       if (!specificSockets) {
