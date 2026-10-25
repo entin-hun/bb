@@ -18,8 +18,9 @@ import {
   listThreadDescendants,
   searchThreadsWithPendingInteractionState,
   updateThread,
-  type ThreadSearchResultGroup as DbThreadSearchResultGroup,
+  upsertThreadParticipant,
   type UpdateThreadInput,
+  type ThreadSearchResultGroup as DbThreadSearchResultGroup,
 } from "@bb/db";
 import type { Environment, Thread, ThreadListEntry } from "@bb/domain";
 import { toEnvironmentResponse } from "../../services/environments/environment-response.js";
@@ -70,6 +71,11 @@ import { handleThreadOwnershipChange } from "../../services/threads/thread-owner
 import { applyThreadExecutionOverride } from "../../services/threads/thread-execution-override.js";
 import { applyThreadSessionOptionPatch } from "../../services/threads/thread-session-options.js";
 import { emitPluginThreadDeleted } from "../../services/plugins/plugin-thread-events.js";
+import {
+  requireThreadCapability,
+  requestAccessibleThreadIds,
+  requestThreadUserId,
+} from "../../services/thread-access.js";
 
 function parseThreadIncludes(query: ThreadGetQuery): Set<ThreadIncludeOption> {
   const includes = new Set<ThreadIncludeOption>();
@@ -223,6 +229,16 @@ function buildThreadSearchResponse(
   };
 }
 
+function intersectThreadIds(
+  requested: readonly string[] | undefined,
+  accessible: string[] | null,
+): readonly string[] | undefined {
+  if (accessible === null) return requested;
+  if (requested === undefined) return accessible;
+  const allowed = new Set(accessible);
+  return requested.filter((id) => allowed.has(id));
+}
+
 export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
   const { get, post, patch, del } = typedRoutes<PublicApiSchema>(app, {
     onValidationError: (msg) => new ApiError(400, "invalid_request", msg),
@@ -233,6 +249,7 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if (query.projectId) {
       requirePublicProject(deps.db, query.projectId);
     }
+    const accessibleThreadIds = requestAccessibleThreadIds(deps, context);
     const result = countThreads(deps.db, {
       ...(query.status !== undefined ? { status: query.status } : {}),
       ...(query.hostId !== undefined ? { hostId: query.hostId } : {}),
@@ -240,6 +257,9 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
         ? { providerId: query.providerId }
         : {}),
       ...(query.projectId !== undefined ? { projectId: query.projectId } : {}),
+      ...(accessibleThreadIds === null
+        ? {}
+        : { threadIds: accessibleThreadIds }),
       ...(query.parentThreadId === undefined
         ? {}
         : {
@@ -263,25 +283,48 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
   });
 
   post(routes.ancestors, (context, payload) => {
+    const accessible = requestAccessibleThreadIds(deps, context);
+    const threadIds = intersectThreadIds(payload.threadIds, accessible) ?? [];
+    const allowed = accessible === null ? null : new Set(accessible);
     return context.json({
-      threads: listThreadAncestors(deps.db, payload.threadIds),
+      threads: listThreadAncestors(deps.db, threadIds).map((thread) => ({
+        ...thread,
+        ancestorIds:
+          allowed === null
+            ? thread.ancestorIds
+            : thread.ancestorIds.filter((id) => allowed.has(id)),
+      })),
     } satisfies ThreadAncestorsListResponse);
   });
 
   post(routes.descendants, (context, payload) => {
+    const accessible = requestAccessibleThreadIds(deps, context);
+    const threadIds = intersectThreadIds(payload.threadIds, accessible) ?? [];
+    const allowed = accessible === null ? null : new Set(accessible);
     return context.json({
-      threads: listThreadDescendants(deps.db, payload.threadIds, {
+      threads: listThreadDescendants(deps.db, threadIds, {
         includeArchived: payload.includeArchived ?? false,
         includeHidden: payload.includeHidden ?? false,
-      }),
+      }).map((thread) => ({
+        ...thread,
+        descendantIds:
+          allowed === null
+            ? thread.descendantIds
+            : thread.descendantIds.filter((id) => allowed.has(id)),
+      })),
     } satisfies ThreadDescendantsListResponse);
   });
 
   post(routes.pluginMetadata.list, (context, payload) => {
+    const threadIds =
+      intersectThreadIds(
+        payload.threadIds,
+        requestAccessibleThreadIds(deps, context),
+      ) ?? [];
     const { threads, corruptThreadIds } = listPluginThreadMetadata(
       deps.db,
       payload.pluginId,
-      payload.threadIds,
+      threadIds,
     );
     for (const threadId of corruptThreadIds) {
       deps.logger.warn(
@@ -292,8 +335,12 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
   });
 
   get(routes.running, (context) => {
+    const accessible = requestAccessibleThreadIds(deps, context);
+    const allowed = accessible === null ? null : new Set(accessible);
     return context.json(
-      listRunningThreadsWithIntendedHosts(deps) satisfies ThreadRunningResponse,
+      listRunningThreadsWithIntendedHosts(deps).filter(
+        (thread) => allowed === null || allowed.has(thread.id),
+      ) satisfies ThreadRunningResponse,
     );
   });
 
@@ -315,6 +362,10 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if (query.sectionId) {
       requireThreadSection(deps, query.sectionId);
     }
+    const requestedThreadIds =
+      query.threadIds === undefined
+        ? undefined
+        : parseThreadListThreadIds(query.threadIds);
     const threads = listThreadsWithPendingInteractionState(deps.db, {
       ...(query.projectId ? { projectId: query.projectId } : {}),
       ...(query.environmentId ? { environmentId: query.environmentId } : {}),
@@ -325,9 +376,13 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       ...(query.unsectioned === "true" ? { unsectioned: true } : {}),
       ...(query.originKind ? { originKind: query.originKind } : {}),
       ...(query.originPluginId ? { originPluginId: query.originPluginId } : {}),
-      ...(query.threadIds === undefined
-        ? {}
-        : { threadIds: parseThreadListThreadIds(query.threadIds) }),
+      ...(() => {
+        const threadIds = intersectThreadIds(
+          requestedThreadIds,
+          requestAccessibleThreadIds(deps, context),
+        );
+        return threadIds === undefined ? {} : { threadIds };
+      })(),
       includeHidden: query.includeHidden === "true",
       archived:
         query.archived === undefined ? undefined : query.archived === "true",
@@ -351,18 +406,24 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
       );
     }
     const limitPerGroup = parseSearchLimitPerGroup(query.limitPerGroup);
+    const accessibleThreadIds = requestAccessibleThreadIds(deps, context);
+    const groups = searchThreadsWithPendingInteractionState(deps.db, {
+      query: searchQuery,
+      limitPerGroup,
+      ...(accessibleThreadIds === null
+        ? {}
+        : { threadIds: accessibleThreadIds }),
+    });
     return context.json(
-      buildThreadSearchResponse(deps, {
-        ...searchThreadsWithPendingInteractionState(deps.db, {
-          query: searchQuery,
-          limitPerGroup,
-        }),
-      }) satisfies ThreadSearchResponse,
+      buildThreadSearchResponse(deps, groups) satisfies ThreadSearchResponse,
     );
   });
 
   post(routes.resolveMentions, (context, payload) => {
-    const uniqueThreadIds = [...new Set(payload.threadIds)];
+    const accessible = requestAccessibleThreadIds(deps, context);
+    const uniqueThreadIds = [
+      ...new Set(intersectThreadIds(payload.threadIds, accessible) ?? []),
+    ];
     const rowsById = new Map(
       listThreadMentionRowsByIds(deps.db, uniqueThreadIds).map((thread) => [
         thread.id,
@@ -389,14 +450,28 @@ export function registerThreadBaseRoutes(app: Hono, deps: AppDeps): void {
     if (payload.sectionId) {
       requireThreadSection(deps, payload.sectionId);
     }
+    const accessSourceThreadId =
+      payload.sourceThreadId ?? payload.parentThreadId;
+    if (accessSourceThreadId !== undefined) {
+      requireThreadCapability(deps, context, accessSourceThreadId, "post");
+    }
     const thread = await createThreadFromRequest(deps, {
       ...payload,
       origin: payload.origin,
     });
+    const userId = requestThreadUserId(context);
+    if (userId !== null && accessSourceThreadId === undefined) {
+      upsertThreadParticipant(deps.db, {
+        role: "owner",
+        threadId: thread.id,
+        userId,
+      });
+    }
     return context.json(toThreadResponseFromThread(deps, { thread }), 201);
   });
 
   post(routes.fork, async (context, payload) => {
+    requireThreadCapability(deps, context, payload.sourceThreadId, "post");
     const thread = await createThreadForkFromRequest(deps, payload);
     return context.json(toThreadResponseFromThread(deps, { thread }), 201);
   });

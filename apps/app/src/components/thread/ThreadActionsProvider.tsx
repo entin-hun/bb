@@ -56,6 +56,10 @@ import { useRouteNavigate } from "@/components/ui/app-route-anchor";
 import { resolveThread } from "@/lib/plugin-sidebar-hooks";
 import { CORE_THREAD_ACTIONS } from "@/lib/thread-actions/core-thread-actions";
 import { ThreadActionCollectors } from "@/lib/thread-actions/thread-action-registry";
+import {
+  ThreadShareDialog,
+  type ThreadShareDialogTarget,
+} from "@/components/dialogs/ThreadShareDialog";
 
 export interface ThreadActionsContextValue {
   archiveEnvironmentThreads: (environmentId: string) => Promise<void>;
@@ -63,6 +67,7 @@ export interface ThreadActionsContextValue {
   renameThreadAsync: (threadId: string, title: string) => Promise<void>;
   requestRename: (thread: Thread) => void;
   requestDelete: (thread: Thread) => void;
+  requestShare: (thread: Thread) => void;
   unarchiveThread: (thread: Thread) => void;
   togglePin: (thread: Thread) => void;
   toggleRead: (thread: Thread) => void;
@@ -147,9 +152,11 @@ export function ThreadActionsProvider({
   const renameDialog = useDialogState<ThreadRenameDialogTarget>();
   const deleteDialog = useDialogState<ThreadDeleteDialogTarget>();
   const archiveDialog = useDialogState<ThreadArchiveDialogTarget>();
+  const shareDialog = useDialogState<ThreadShareDialogTarget>();
 
   const { onClose: closeRenameDialog, onOpen: openRenameDialog } = renameDialog;
   const { onClose: closeDeleteDialog, onOpen: openDeleteDialog } = deleteDialog;
+  const { onOpen: openShareDialog } = shareDialog;
   const { onClose: closeArchiveDialog, onOpen: openArchiveDialog } =
     archiveDialog;
 
@@ -573,6 +580,16 @@ export function ThreadActionsProvider({
     [pinMutate, unpinMutate],
   );
 
+  const requestShare = useCallback(
+    (thread: Thread) => {
+      openShareDialog({
+        id: thread.id,
+        title: getThreadDisplayTitle(thread),
+      });
+    },
+    [openShareDialog],
+  );
+
   const value = useMemo<ThreadActionsContextValue>(
     () => ({
       archiveEnvironmentThreads,
@@ -580,6 +597,7 @@ export function ThreadActionsProvider({
       requestRename,
       requestArchive,
       requestDelete,
+      requestShare,
       unarchiveThread: unarchiveThreadAction,
       togglePin,
       toggleRead,
@@ -590,6 +608,7 @@ export function ThreadActionsProvider({
       requestArchive,
       requestRename,
       requestDelete,
+      requestShare,
       togglePin,
       toggleRead,
       unarchiveThreadAction,
@@ -631,6 +650,10 @@ export function ThreadActionsProvider({
         pending={archiveThreadAndChildrenMutation.isPending}
         onOpenChange={archiveDialog.onOpenChange}
         onArchive={confirmArchive}
+      />
+      <ThreadShareDialog
+        target={shareDialog.target}
+        onOpenChange={shareDialog.onOpenChange}
       />
     </ThreadActionsContext.Provider>
   );

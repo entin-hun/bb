@@ -425,14 +425,95 @@ import {
   type ServerMoveStatusResponse,
 } from "./api/server-move.js";
 import type { ApiError } from "./errors.js";
+import {
+  addThreadParticipantRequestSchema,
+  createThreadInviteRequestSchema,
+  updateThreadParticipantRequestSchema,
+  type AddThreadParticipantRequest,
+  type AuthSessionResponse,
+  type CreateThreadInviteRequest,
+  type CreateThreadInviteResponse,
+  type ThreadAccessResponse,
+  type ThreadInvitePreview,
+  type ThreadParticipant,
+  type UpdateThreadParticipantRequest,
+} from "./api/thread-access.js";
 
 type PathProjectSourceId = { param: { id: string; sourceId: string } };
 type PathThreadMessage = { param: { id: string; seq: string } };
 type PathThreadInteractionId = {
   param: { id: string; interactionId: string };
 };
+type PathThreadParticipant = { param: { id: string; userId: string } };
+type PathThreadInvite = { param: { id: string; inviteId: string } };
+type PathInviteToken = { param: { token: string } };
 
 export const publicApiRoutes = {
+  auth: {
+    session: defineRoute({
+      path: "/auth/session",
+      method: "get",
+      request: noRequest(),
+      response: jsonResponse<AuthSessionResponse>(),
+    }),
+  },
+  threadAccess: {
+    get: defineRoute({
+      path: "/threads/:id/access",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<ThreadAccessResponse>(),
+    }),
+    addParticipant: defineRoute({
+      path: "/threads/:id/participants",
+      method: "post",
+      request: jsonRequest<PathId, AddThreadParticipantRequest>(
+        addThreadParticipantRequestSchema,
+      ),
+      response: jsonResponse<ThreadParticipant>({ status: 201 }),
+    }),
+    updateParticipant: defineRoute({
+      path: "/threads/:id/participants/:userId",
+      method: "patch",
+      request: jsonRequest<
+        PathThreadParticipant,
+        UpdateThreadParticipantRequest
+      >(updateThreadParticipantRequestSchema),
+      response: jsonResponse<ThreadParticipant>(),
+    }),
+    removeParticipant: defineRoute({
+      path: "/threads/:id/participants/:userId",
+      method: "delete",
+      request: noRequest<PathThreadParticipant>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    createInvite: defineRoute({
+      path: "/threads/:id/invites",
+      method: "post",
+      request: jsonRequest<PathId, CreateThreadInviteRequest>(
+        createThreadInviteRequestSchema,
+      ),
+      response: jsonResponse<CreateThreadInviteResponse>({ status: 201 }),
+    }),
+    revokeInvite: defineRoute({
+      path: "/threads/:id/invites/:inviteId",
+      method: "delete",
+      request: noRequest<PathThreadInvite>(),
+      response: jsonResponse<{ ok: true }>(),
+    }),
+    previewInvite: defineRoute({
+      path: "/thread-invites/:token",
+      method: "get",
+      request: noRequest<PathInviteToken>(),
+      response: jsonResponse<ThreadInvitePreview>(),
+    }),
+    acceptInvite: defineRoute({
+      path: "/thread-invites/:token/accept",
+      method: "post",
+      request: noRequest<PathInviteToken>(),
+      response: jsonResponse<ThreadParticipant>(),
+    }),
+  },
   promptHistory: {
     list: defineRoute({
       path: "/prompt-history",

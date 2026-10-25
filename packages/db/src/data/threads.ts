@@ -118,6 +118,7 @@ export interface ThreadSearchResults {
 export interface SearchThreadsWithPendingInteractionStateArgs {
   query: string;
   limitPerGroup: number;
+  threadIds?: readonly string[];
 }
 
 export interface UpsertThreadTitleSearchSegmentsArgs {
@@ -150,6 +151,7 @@ interface ListThreadSearchMatchRowsArgs {
   anyTokenMatchQuery: string;
   limitPerGroup: number;
   tokenMatchQueries: readonly string[];
+  threadIds?: readonly string[];
 }
 
 interface ThreadSearchMatchRow {
@@ -1011,6 +1013,10 @@ function listThreadSearchMatchRows(
   db: DbConnection,
   args: ListThreadSearchMatchRowsArgs,
 ): ThreadSearchMatchRow[] {
+  if (args.threadIds?.length === 0) return [];
+  const threadAccessFilter = args.threadIds === undefined
+    ? sql``
+    : sql`AND t.id IN (${sql.join(args.threadIds.map((id) => sql`${id}`), sql`, `)})`;
   const tokenThreadSelects = args.tokenMatchQueries.map(
     (matchQuery) => sql`
       SELECT DISTINCT s.thread_id AS threadId
@@ -1060,6 +1066,7 @@ function listThreadSearchMatchRows(
       JOIN threads AS t ON t.id = matching_threads.threadId
       WHERE t.deleted_at IS NULL
         AND t.visibility = 'visible'
+        ${threadAccessFilter}
     ),
     ordered_threads AS (
       SELECT
@@ -1201,6 +1208,7 @@ export function searchThreadsWithPendingInteractionState(
     anyTokenMatchQuery,
     limitPerGroup,
     tokenMatchQueries,
+    ...(args.threadIds === undefined ? {} : { threadIds: args.threadIds }),
   });
 
   return {
@@ -1223,6 +1231,7 @@ export interface CountThreadsOptions {
   hostId?: string;
   providerId?: string;
   projectId?: string;
+  threadIds?: readonly string[];
   /**
    * `{ kind: "root" }` counts threads with no parent, `{ kind: "id" }` counts
    * one parent's children, and omitting the option does not filter on
@@ -1278,6 +1287,9 @@ export function countThreads(
     options.projectId !== undefined
       ? eq(threads.projectId, options.projectId)
       : undefined,
+    options.threadIds === undefined
+      ? undefined
+      : inArray(threads.id, [...options.threadIds]),
     options.parent === undefined
       ? undefined
       : options.parent.kind === "root"

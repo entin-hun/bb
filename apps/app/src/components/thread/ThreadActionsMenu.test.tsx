@@ -358,6 +358,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       desktop: [
         "Open in split",
         "Copy link",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -375,6 +376,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       compact: [
         "Copy link",
         "New thread in environment",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -406,6 +408,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       desktop: [
         "Open in split",
         "Copy link",
+        "Share",
         "---",
         "Unpin",
         "Mark read",
@@ -421,6 +424,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       ],
       compact: [
         "Copy link",
+        "Share",
         "---",
         "Unpin",
         "Mark read",
@@ -445,6 +449,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       layout: null,
       desktop: [
         "Copy link",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -462,6 +467,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       compact: [
         "Copy link",
         "New thread in environment",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -485,6 +491,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       desktop: [
         "Focus split",
         "Copy link",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -502,6 +509,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       compact: [
         "Copy link",
         "New thread in environment",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -527,6 +535,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       layout: twoPaneLayout("pane_target"),
       desktop: [
         "Copy link",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -544,6 +553,7 @@ describe.each(SURFACES)("thread actions on the $name", (surface) => {
       compact: [
         "Copy link",
         "New thread in environment",
+        "Share",
         "---",
         "Pin",
         "Mark unread",
@@ -805,6 +815,7 @@ describe("thread action registrations", () => {
       "bb--core/split",
       "bb--core/copyLink",
       "bb--core/newThreadInEnvironment",
+      "bb--core/share",
       "bb--core/pin",
       "bb--core/read",
       "bb--core/rename",

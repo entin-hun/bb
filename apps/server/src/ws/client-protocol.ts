@@ -13,8 +13,9 @@ interface ClientSocket {
 export function onClientSocketOpen(
   hub: NotificationHub,
   socket: ClientSocket,
+  canAccessThread: ((threadId: string) => boolean) | null = null,
 ): void {
-  hub.registerClient(socket);
+  hub.registerClient(socket, canAccessThread);
 }
 
 export function onClientSocketMessage(
@@ -35,6 +36,14 @@ export function onClientSocketMessage(
 
   switch (parsed.type) {
     case "subscribe":
+      if (
+        (parsed.target.kind === "thread-detail" ||
+          parsed.target.kind === "thread-timeline") &&
+        !deps.hub.clientCanAccessThread(socket, parsed.target.threadId)
+      ) {
+        socket.close(1008, "thread_forbidden");
+        return;
+      }
       deps.hub.subscribe(socket, parsed.target);
       deps.watchInterests.subscribe(socket, parsed.target);
       break;

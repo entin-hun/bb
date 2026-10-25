@@ -82,6 +82,13 @@ import type {
   UpdateThreadTabsRequest,
   UpdateThreadRequest,
   UpdateQueuedMessageRequest,
+  AddThreadParticipantRequest,
+  CreateThreadInviteRequest,
+  CreateThreadInviteResponse,
+  ThreadAccessResponse,
+  ThreadInvitePreview,
+  ThreadParticipant,
+  UpdateThreadParticipantRequest,
 } from "@bb/server-contract";
 import { signalRequestArgs, type CreateSdkAreaArgs } from "./common.js";
 
@@ -585,6 +592,29 @@ export interface ThreadTabsArea {
   update(args: ThreadTabsUpdateArgs): Promise<ThreadTabsUpdateResult>;
 }
 
+export interface ThreadAccessArea {
+  acceptInvite(args: { token: string }): Promise<ThreadParticipant>;
+  addParticipant(
+    args: AddThreadParticipantRequest & { threadId: string },
+  ): Promise<ThreadParticipant>;
+  createInvite(
+    args: CreateThreadInviteRequest & { threadId: string },
+  ): Promise<CreateThreadInviteResponse>;
+  get(args: ThreadStatusArgs): Promise<ThreadAccessResponse>;
+  previewInvite(args: { token: string }): Promise<ThreadInvitePreview>;
+  removeParticipant(args: {
+    threadId: string;
+    userId: string;
+  }): Promise<{ ok: true }>;
+  revokeInvite(args: {
+    inviteId: string;
+    threadId: string;
+  }): Promise<{ ok: true }>;
+  updateParticipant(
+    args: UpdateThreadParticipantRequest & { threadId: string; userId: string },
+  ): Promise<ThreadParticipant>;
+}
+
 /**
  * Queued rows across every thread.
  *
@@ -599,6 +629,7 @@ export interface ThreadQueueArea {
 }
 
 export interface ThreadsArea {
+  access: ThreadAccessArea;
   archive(args: ThreadActionArgs): Promise<ThreadArchiveResult>;
   archiveAll(args: ThreadActionArgs): Promise<ThreadArchiveAllResult>;
   childSummary(args: ThreadStatusArgs): Promise<ThreadChildSummaryResult>;
@@ -1212,7 +1243,76 @@ export function createThreadsArea(args: CreateSdkAreaArgs): ThreadsArea {
       return threadTabsResponseSchema.parse(body);
     },
   };
+  const access: ThreadAccessArea = {
+    async acceptInvite(input) {
+      return transport.readJson(
+        transport.api.v1["thread-invites"][":token"].accept.$post({
+          param: { token: input.token },
+        }),
+      );
+    },
+    async addParticipant(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"].participants.$post({
+          param: { id: input.threadId },
+          json: { email: input.email, role: input.role },
+        }),
+      );
+    },
+    async createInvite(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"].invites.$post({
+          param: { id: input.threadId },
+          json: {
+            email: input.email,
+            expiresInHours: input.expiresInHours,
+            role: input.role,
+          },
+        }),
+      );
+    },
+    async get(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"].access.$get(
+          { param: { id: input.threadId } },
+          ...signalRequestArgs(input.signal),
+        ),
+      );
+    },
+    async previewInvite(input) {
+      return transport.readJson(
+        transport.api.v1["thread-invites"][":token"].$get({
+          param: { token: input.token },
+        }),
+      );
+    },
+    async removeParticipant(input) {
+      await transport.readVoid(
+        transport.api.v1.threads[":id"].participants[":userId"].$delete({
+          param: { id: input.threadId, userId: input.userId },
+        }),
+      );
+      return { ok: true };
+    },
+    async revokeInvite(input) {
+      await transport.readVoid(
+        transport.api.v1.threads[":id"].invites[":inviteId"].$delete({
+          param: { id: input.threadId, inviteId: input.inviteId },
+        }),
+      );
+      return { ok: true };
+    },
+    async updateParticipant(input) {
+      return transport.readJson(
+        transport.api.v1.threads[":id"].participants[":userId"].$patch({
+          param: { id: input.threadId, userId: input.userId },
+          json: { role: input.role },
+        }),
+      );
+    },
+  };
   return {
+    access,
     archive: archiveAll,
     archiveAll,
     async childSummary(input) {

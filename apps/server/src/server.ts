@@ -34,6 +34,7 @@ import { registerSystemRoutes } from "./routes/system.js";
 import { registerUiPreferenceRoutes } from "./routes/ui-preferences.js";
 import { registerTerminalRoutes } from "./routes/terminals.js";
 import { registerThreadRoutes } from "./routes/threads/index.js";
+import { registerThreadAccessRoutes } from "./routes/thread-access.js";
 import { registerQueueRoutes } from "./routes/queue.js";
 import { registerPluginRoutes } from "./routes/plugins.js";
 import { registerPluginCatalogRoutes } from "./routes/plugin-catalog.js";
@@ -74,8 +75,27 @@ import {
 } from "./internal/auth.js";
 import {
   captureTrustedRemoteAddress,
+  getTrustedRemoteAddress,
   resolveRequestAppSurface,
 } from "./request-context.js";
+import {
+  authentikConfigFromEnvironment,
+  beginAuthentikLogin,
+  completeAuthentikLogin,
+  getAuthentikUser,
+  getRequestAuthentikUser,
+  logoutAuthentikUser,
+  setRequestAuthentikUser,
+} from "./services/authentik.js";
+import {
+  bootstrapLegacyThreadOwners,
+  getActiveThreadParticipant,
+} from "@bb/db";
+import {
+  requireThreadCapability,
+  threadCapabilityForRequest,
+  userHasThreadCapability,
+} from "./services/thread-access.js";
 import { runEventLoopWork } from "./services/system/event-loop-work.js";
 import { runWithTelemetryAppSurface } from "./services/system/telemetry.js";
 import {
@@ -487,6 +507,7 @@ export function createApp(
     },
   };
   const pendingServerMove = serverMoveOptions.pending;
+  const authentik = authentikConfigFromEnvironment();
 
   app.use("*", async (context, next) => {
     const problem = requestHostProblem(context, deps);
@@ -546,6 +567,31 @@ export function createApp(
       ...(serverMove === null ? {} : { serverMove }),
     });
   });
+  if (authentik !== null) {
+    app.get("/auth/authentik/login", (context) =>
+      beginAuthentikLogin(authentik, context.req.query("returnTo")),
+    );
+    app.get("/auth/authentik/callback", (context) => {
+      const code = context.req.query("code");
+      if (!code) {
+        throw new ApiError(
+          400,
+          "invalid_request",
+          "Missing Authentik authorization code",
+        );
+      }
+      return completeAuthentikLogin({
+        code,
+        config: authentik,
+        cookies: context.req.header("cookie"),
+        db: deps.db,
+        state: context.req.query("state"),
+      });
+    });
+    app.post("/auth/logout", (context) =>
+      logoutAuthentikUser(authentik, deps.db, context.req.header("cookie")),
+    );
+  }
   app.get("/install.sh", async (context) => {
     const script = await readFile(INSTALL_MACHINE_SCRIPT_PATH, "utf8");
     const credential = context.req.header("X-BB-Enrollment");
@@ -855,6 +901,71 @@ export function createApp(
     app.use(path, serverMoveWriteFreezeMiddleware(daemonWriteFreezeState));
   }
   const publicApi = new Hono();
+  const threadCollectionRouteIds = new Set([
+    "ancestors",
+    "count",
+    "descendants",
+    "fork",
+    "plugin-metadata",
+    "resolve-mentions",
+    "running",
+    "search",
+  ]);
+  publicApi.use("*", async (context, next) => {
+    const user =
+      authentik === null
+        ? null
+        : getAuthentikUser(deps.db, context.req.header("cookie"));
+    setRequestAuthentikUser(context, user);
+    if (authentik === null || context.req.path.endsWith("/auth/session")) {
+      return next();
+    }
+    const remoteAddress = getTrustedRemoteAddress(context);
+    const hostname = new URL(context.req.url).hostname;
+    const localSystemRequest =
+      (hostname === "localhost" ||
+        hostname === "127.0.0.1" ||
+        hostname === "::1") &&
+      (remoteAddress === undefined ||
+        remoteAddress === "127.0.0.1" ||
+        remoteAddress === "::1");
+    if (user === null && !localSystemRequest) {
+      throw new ApiError(
+        401,
+        "unauthorized",
+        "Sign in with Authentik to continue",
+      );
+    }
+    if (user !== null) bootstrapLegacyThreadOwners(deps.db, user.id);
+    return next();
+  });
+  publicApi.use("/threads/:id/*", async (context, next) => {
+    const id = context.req.param("id");
+    if (threadCollectionRouteIds.has(id)) {
+      return next();
+    }
+    requireThreadCapability(
+      deps,
+      context,
+      id,
+      threadCapabilityForRequest(context.req.method, context.req.path),
+    );
+    return next();
+  });
+  publicApi.use("/threads/:id", async (context, next) => {
+    if (
+      context.req.method === "POST" ||
+      threadCollectionRouteIds.has(context.req.param("id"))
+    )
+      return next();
+    requireThreadCapability(
+      deps,
+      context,
+      context.req.param("id"),
+      threadCapabilityForRequest(context.req.method, context.req.path),
+    );
+    return next();
+  });
   publicApi.use("*", async (context, next) => {
     if (PLUGIN_WIRE_HTTP_PATH.test(context.req.path)) {
       return next();
@@ -883,6 +994,22 @@ export function createApp(
   registerTerminalRoutes(publicApi, deps);
   registerEnvironmentRoutes(publicApi, deps);
   registerThreadRoutes(publicApi, deps);
+  registerThreadAccessRoutes(publicApi, deps);
+  publicApi.get("/auth/session", (context) => {
+    const user = getRequestAuthentikUser(context);
+    return context.json({
+      enabled: authentik !== null,
+      user:
+        user === null
+          ? null
+          : {
+              email: user.email,
+              id: user.id,
+              image: user.image,
+              name: user.name,
+            },
+    });
+  });
   registerQueueRoutes(publicApi, deps);
   registerSystemRoutes(publicApi, deps, pluginService);
   registerUiPreferenceRoutes(publicApi, deps);
@@ -948,13 +1075,42 @@ export function createApp(
       );
     }
   };
+  const browserWebSocketUserId = (
+    context: Parameters<typeof browserRequestProblem>[0],
+  ): string | null => {
+    if (authentik === null) return null;
+    const user = getAuthentikUser(deps.db, context.req.header("cookie"));
+    const hostname = new URL(context.req.url).hostname;
+    const localSystemRequest =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1";
+    if (user === null && !localSystemRequest) {
+      throw new ApiError(
+        401,
+        "unauthorized",
+        "Sign in with Authentik to continue",
+      );
+    }
+    return user?.id ?? null;
+  };
 
   app.get(
     "/ws",
     upgradeWebSocket((context) => {
       assertBrowserWebSocketAllowed(context);
+      const userId = browserWebSocketUserId(context);
       return {
-        onOpen: (_event, socket) => onClientSocketOpen(deps.hub, socket),
+        onOpen: (_event, socket) =>
+          onClientSocketOpen(
+            deps.hub,
+            socket,
+            userId === null
+              ? null
+              : (threadId) =>
+                  getActiveThreadParticipant(deps.db, { threadId, userId }) !==
+                  null,
+          ),
         onMessage: (event, socket) =>
           onClientSocketMessage(deps, socket, event.data),
         onClose: (_event, socket) => onClientSocketClose(deps, socket),
@@ -966,7 +1122,21 @@ export function createApp(
     "/ws/terminals/:terminalId",
     upgradeWebSocket((context) => {
       assertBrowserWebSocketAllowed(context);
+      const userId = browserWebSocketUserId(context);
       const terminalId = context.req.param("terminalId");
+      if (userId !== null) {
+        const terminal = deps.terminalSessions.getTerminal({ terminalId });
+        if (
+          terminal.threadId === null ||
+          !userHasThreadCapability(deps, userId, terminal.threadId, "post")
+        ) {
+          throw new ApiError(
+            403,
+            "forbidden",
+            "Thread role does not allow terminal access",
+          );
+        }
+      }
       const query = terminalWebSocketQuerySchema.safeParse({
         outputAcks: context.req.query("outputAcks"),
         sinceSeq: context.req.query("sinceSeq"),

@@ -110,6 +110,36 @@ export {
   THREAD_SEARCH_LIMIT_PER_GROUP_DEFAULT,
   THREAD_SEARCH_LIMIT_PER_GROUP_MAX,
 } from "./threads.js";
+
+export {
+  bootstrapLegacyThreadOwners,
+  copyThreadParticipants,
+  getActiveThreadParticipant,
+  listAccessibleThreadIds,
+  listActiveThreadParticipants,
+  revokeThreadParticipant,
+  threadParticipantRoles,
+  upsertThreadParticipant,
+} from "./thread-participants.js";
+export type { ThreadParticipantRole } from "./thread-participants.js";
+
+export {
+  acceptThreadInvite,
+  createThreadInvite,
+  getActiveThreadInviteByTokenHash,
+  listThreadInvites,
+  revokeThreadInvite,
+} from "./thread-invites.js";
+export type { ThreadInviteRole } from "./thread-invites.js";
+
+export {
+  createUserSession,
+  deleteUserSession,
+  getActiveUserSession,
+  getAuthUserByEmail,
+  getAuthUserById,
+  upsertAuthentikUser,
+} from "./authentik-users.js";
 export type {
   ApplyThreadLifecycleEventArgs,
   ApplyThreadLifecycleEventOutcome,

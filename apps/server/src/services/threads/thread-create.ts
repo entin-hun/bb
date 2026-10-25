@@ -1,7 +1,12 @@
 import { requestThreadStorageDeletion } from "./thread-lifecycle.js";
 import { seedThreadSessionOptionSelections } from "./thread-session-options.js";
 import { assertEnvironmentPathAvailable } from "../environments/path-admission.js";
-import { markThreadDeleted, getEnvironment, getThread } from "@bb/db";
+import {
+  copyThreadParticipants,
+  markThreadDeleted,
+  getEnvironment,
+  getThread,
+} from "@bb/db";
 import {
   describeSessionOptionConflict,
   modelSessionOptionConflict,
@@ -849,6 +854,13 @@ export async function createThreadFromRequest(
     ...createArgs,
     sendAt: request.sendAt,
   });
+  const accessSourceThread = sourceThread ?? parentThread;
+  if (accessSourceThread !== null) {
+    copyThreadParticipants(deps.db, {
+      fromThreadId: accessSourceThread.id,
+      toThreadId: thread.id,
+    });
+  }
   deps.telemetry.capture({
     name: "thread_created",
     properties: {

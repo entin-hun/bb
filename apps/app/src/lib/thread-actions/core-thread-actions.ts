@@ -40,7 +40,9 @@ function useSplitAvailability(): SplitAvailability {
   const layout = useAtomValue(splitLayoutAtom);
   const { threadId } = useRouteState();
   const panes =
-    layout !== null && countPanes(layout.root) > 1 ? listPanes(layout.root) : [];
+    layout !== null && countPanes(layout.root) > 1
+      ? listPanes(layout.root)
+      : [];
   const focusedPane = panes.find(
     (pane) => pane.paneId === layout?.focusedPaneId,
   );
@@ -76,6 +78,7 @@ function afterMenuCloses(run: () => void): void {
 interface LifecycleHandlers {
   archive: (threadId: string) => Promise<void>;
   requestDelete: (threadId: string) => Promise<void>;
+  requestShare: (threadId: string) => Promise<void>;
 }
 
 function useLifecycleHandlers(): LifecycleHandlers {
@@ -108,6 +111,18 @@ function useLifecycleHandlers(): LifecycleHandlers {
           showMutationErrorToast({
             error,
             fallbackMessage: "Failed to delete thread.",
+          });
+        }
+      },
+      requestShare: async (threadId: string) => {
+        try {
+          latest.current.requestShare(
+            await resolveThread(queryClient, threadId),
+          );
+        } catch (error) {
+          showMutationErrorToast({
+            error,
+            fallbackMessage: "Failed to share thread.",
           });
         }
       },
@@ -178,6 +193,19 @@ export const CORE_THREAD_ACTIONS: readonly PluginThreadActionRegistration<unknow
             successMessage: "Thread link copied",
             errorMessage: "Failed to copy thread link",
           }).then(() => undefined),
+      }),
+    }),
+    coreThreadAction({
+      id: "share",
+      group: GROUPS.open,
+      order: 30,
+      title: "Share",
+      icon: "Share",
+      useData: useLifecycleHandlers,
+      item: ({ thread, data }) => ({
+        label: "Share",
+        icon: "Share",
+        run: () => afterMenuCloses(() => void data.requestShare(thread.id)),
       }),
     }),
     coreThreadAction({

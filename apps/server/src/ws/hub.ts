@@ -230,6 +230,10 @@ export class HostOnlineRpcUnavailableError extends Error {
 
 export class NotificationHub implements DbNotifier {
   private readonly clientKeysBySocket = new Map<HubSocket, Set<string>>();
+  private readonly clientThreadAccess = new Map<
+    HubSocket,
+    ((threadId: string) => boolean) | null
+  >();
   private readonly clientSocketsByKey = new Map<string, Set<HubSocket>>();
   private readonly threadTimelineTargetsByKey = new Map<
     string,
@@ -295,10 +299,18 @@ export class NotificationHub implements DbNotifier {
     PendingThreadListEventsAppended
   >();
 
-  registerClient(socket: HubSocket): void {
+  registerClient(
+    socket: HubSocket,
+    canAccessThread: ((threadId: string) => boolean) | null = null,
+  ): void {
     if (!this.clientKeysBySocket.has(socket)) {
       this.clientKeysBySocket.set(socket, new Set());
+      this.clientThreadAccess.set(socket, canAccessThread);
     }
+  }
+
+  clientCanAccessThread(socket: HubSocket, threadId: string): boolean {
+    return this.clientThreadAccess.get(socket)?.(threadId) ?? true;
   }
 
   unregisterClient(socket: HubSocket): void {
@@ -321,6 +333,7 @@ export class NotificationHub implements DbNotifier {
     }
 
     this.clientKeysBySocket.delete(socket);
+    this.clientThreadAccess.delete(socket);
   }
 
   onChangedMessage(listener: ChangedMessageListener): () => void {
@@ -583,7 +596,7 @@ export class NotificationHub implements DbNotifier {
       return 0;
     }
     const payload = JSON.stringify(signal);
-    this.notifyClientsByKeySet(sockets, payload);
+    this.notifyClientsByKeySet(sockets, payload, signal.target.threadId);
     return payload.length;
   }
 
@@ -937,6 +950,7 @@ export class NotificationHub implements DbNotifier {
           file: request.file,
         }),
       ),
+      thread.threadId,
     );
   }
 
@@ -953,6 +967,7 @@ export class NotificationHub implements DbNotifier {
           action,
         }),
       ),
+      thread.threadId,
     );
   }
 
@@ -973,9 +988,15 @@ export class NotificationHub implements DbNotifier {
     );
   }
 
-  private broadcastToAllClients(payload: string): number {
+  private broadcastToAllClients(payload: string, threadId?: string): number {
     let delivered = 0;
     for (const socket of this.clientKeysBySocket.keys()) {
+      if (
+        threadId !== undefined &&
+        !this.clientCanAccessThread(socket, threadId)
+      ) {
+        continue;
+      }
       socket.send(payload);
       delivered += 1;
     }
@@ -1118,7 +1139,7 @@ export class NotificationHub implements DbNotifier {
       subscriptionKey({ kind: "thread-detail", threadId }),
     );
     if (detailSockets) {
-      this.notifyClientsByKeySet(detailSockets, payload);
+      this.notifyClientsByKeySet(detailSockets, payload, threadId);
     }
     this.notifyChangedMessageListeners(message);
     return payload;
@@ -1205,6 +1226,7 @@ export class NotificationHub implements DbNotifier {
     }
     const detailKey = subscriptionKey({ kind: "thread-detail", threadId });
     for (const socket of listSockets) {
+      if (!this.clientCanAccessThread(socket, threadId)) continue;
       if (this.clientKeysBySocket.get(socket)?.has(detailKey)) {
         continue;
       }
@@ -1228,15 +1250,26 @@ export class NotificationHub implements DbNotifier {
     if (payload === null) {
       return;
     }
-    this.notifyClientsByKeySet(sockets, payload);
+    this.notifyClientsByKeySet(
+      sockets,
+      payload,
+      message.entity === "thread" ? message.id : undefined,
+    );
     this.notifyChangedMessageListeners(message);
   }
 
   private notifyClientsByKeySet(
     sockets: Iterable<HubSocket>,
     payload: string,
+    threadId?: string,
   ): void {
     for (const socket of sockets) {
+      if (
+        threadId !== undefined &&
+        !this.clientCanAccessThread(socket, threadId)
+      ) {
+        continue;
+      }
       socket.send(payload);
     }
   }

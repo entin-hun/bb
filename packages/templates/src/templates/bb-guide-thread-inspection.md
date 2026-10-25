@@ -53,6 +53,28 @@ Sections:
   bb thread section rename <id> <name>
   bb thread section delete <id> [--yes]
 
+Sharing and roles:
+
+  bb thread access <thread-id>                         Show participants and invitations
+  bb thread participant add <thread-id> <email>        Assign a user who has signed in before
+    --role <maintainer|member|viewer>
+  bb thread participant role <thread-id> <user-id> <role>
+  bb thread participant remove <thread-id> <user-id>
+  bb thread invite create <thread-id>                  Create a single-use invitation
+    --email <email>                                    Restrict it to one Authentik account
+    --role <maintainer|member|viewer>
+    --expires <hours>                                  1 to 168 hours; default 24
+  bb thread invite revoke <thread-id> <invite-id>
+  bb thread invite preview <token>
+  bb thread invite accept <token>
+
+  Authentik roles are cumulative: viewers can read, members can also post,
+  maintainers can also manage participants and invitations, and owners can
+  change roles, remove participants, and delete the thread. Agent-created
+  children and forks inherit the source thread's active participants. For a
+  remote CLI, set BB_AUTHENTIK_SESSION to an active session id; local trusted
+  server automation continues to use the system identity.
+
 Inspecting:
 
   bb thread context [id]                   Show recorded context usage and available breakdown (--self, --json)

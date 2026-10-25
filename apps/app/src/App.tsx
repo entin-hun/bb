@@ -29,6 +29,8 @@ import { usePluginFrontendBoot } from "./hooks/usePluginFrontendBoot";
 import { markRouteContentPainted } from "./lib/route-content-paint";
 import { useRememberPluginNavPanelChrome } from "@/lib/plugin-nav-panel-chrome";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { AuthentikGate } from "./components/auth/AuthentikGate";
+import { ThreadInviteView } from "./views/ThreadInviteView";
 import {
   AUTH_CALLBACK_ROUTE_PATH,
   LEGACY_AUTOMATION_DETAIL_ROUTE_PATH,
@@ -461,7 +463,7 @@ function PluginsRoute() {
   );
 }
 
-export function App() {
+function AuthenticatedApp() {
   useWebSocket();
   useDesktopThemeSync();
   useAppTheme();
@@ -480,6 +482,7 @@ export function App() {
               <NativeShellReporter />
               <UiPreferencesSync />
               <Routes>
+                <Route path="/invite/:token" element={<ThreadInviteView />} />
                 <Route
                   path={AUTH_CALLBACK_ROUTE_PATH}
                   element={<AuthCallbackView />}
@@ -505,5 +508,13 @@ export function App() {
         </RouteNavigationProvider>
       </AppCommandProvider>
     </QuickCreateProjectProvider>
+  );
+}
+
+export function App() {
+  return (
+    <AuthentikGate>
+      <AuthenticatedApp />
+    </AuthentikGate>
   );
 }

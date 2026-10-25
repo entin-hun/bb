@@ -55,6 +55,39 @@ export const authUsers = sqliteTable(
   (table) => [uniqueIndex("user_email_unique").on(table.email)],
 );
 
+export const authentikIdentities = sqliteTable(
+  "authentik_identities",
+  {
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.issuer, table.subject] }),
+    uniqueIndex("authentik_identities_user_idx").on(table.userId),
+  ],
+);
+
+export const userSessions = sqliteTable(
+  "user_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("user_sessions_user_idx").on(table.userId),
+    index("user_sessions_expiry_idx").on(table.expiresAt),
+  ],
+);
+
 export const authApiKeys = sqliteTable(
   "apikey",
   {
@@ -704,6 +737,56 @@ export const threadPluginMetadata = sqliteTable(
     metadataJson: text("metadata_json").notNull(),
   },
   (table) => [primaryKey({ columns: [table.threadId, table.pluginId] })],
+);
+
+export const threadParticipants = sqliteTable(
+  "thread_participants",
+  {
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    role: text("role", {
+      enum: ["owner", "maintainer", "member", "viewer"],
+    }).notNull(),
+    revokedAt: integer("revoked_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.threadId, table.userId] }),
+    index("thread_participants_user_idx").on(table.userId, table.threadId),
+  ],
+);
+
+export const threadInvites = sqliteTable(
+  "thread_invites",
+  {
+    id: text("id").primaryKey(),
+    threadId: text("thread_id")
+      .notNull()
+      .references(() => threads.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull(),
+    email: text("email"),
+    role: text("role", { enum: ["maintainer", "member", "viewer"] }).notNull(),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at").notNull(),
+    acceptedByUserId: text("accepted_by_user_id").references(
+      () => authUsers.id,
+      { onDelete: "set null" },
+    ),
+    acceptedAt: integer("accepted_at"),
+    revokedAt: integer("revoked_at"),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("thread_invites_token_hash_idx").on(table.tokenHash),
+    index("thread_invites_thread_idx").on(table.threadId, table.createdAt),
+  ],
 );
 
 export const threadTabs = sqliteTable("thread_tabs", {

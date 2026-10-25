@@ -406,6 +406,7 @@ type ExpectedThemeKey = "catalog" | "get" | "resolve" | "set";
 type ExpectedThreadSectionsKey = "create" | "delete" | "list" | "update";
 
 type ExpectedThreadsKey =
+  | "access"
   | "experimental_listAncestors"
   | "experimental_listDescendants"
   | "experimental_listPluginMetadata"
@@ -460,6 +461,15 @@ type ExpectedThreadsKey =
   | "wait";
 
 type ExpectedThreadEventsKey = "list" | "wait";
+type ExpectedThreadAccessKey =
+  | "acceptInvite"
+  | "addParticipant"
+  | "createInvite"
+  | "get"
+  | "previewInvite"
+  | "removeParticipant"
+  | "revokeInvite"
+  | "updateParticipant";
 /**
  * The cross-thread queue area answers exactly one question — what is queued
  * right now — so it has exactly one method. A row's own operations (send-now,
@@ -623,6 +633,9 @@ describe("SDK public type entrypoints", () => {
     expectTypeOf<
       keyof RootBbSdk["threads"]
     >().toEqualTypeOf<ExpectedThreadsKey>();
+    expectTypeOf<
+      keyof RootBbSdk["threads"]["access"]
+    >().toEqualTypeOf<ExpectedThreadAccessKey>();
     expectTypeOf<
       keyof RootBbSdk["threads"]["events"]
     >().toEqualTypeOf<ExpectedThreadEventsKey>();

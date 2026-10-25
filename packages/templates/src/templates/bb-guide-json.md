@@ -71,6 +71,12 @@ the most-parsed commands ends with the same shape.
   bb thread section list --json
     [{id, name, createdAt, updatedAt}]
 
+  bb thread access <id> --json
+    {currentRole, participants: [{userId, email, name, role}], invites: [{id, email, role, expiresAt, acceptedAt, revokedAt}]}
+
+  bb thread invite create <id> --json
+    {invite, url}
+
   bb thread queue list <id> --json, bb thread interactions list <id> --json, bb thread history <id> --json
     bare arrays
 
