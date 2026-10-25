@@ -1,6 +1,7 @@
 import {
   createTerminalSession,
   createUserSession,
+  getThread,
   upsertAuthentikUser,
   upsertThreadParticipant,
 } from "@bb/db";
@@ -87,6 +88,69 @@ function request(
 }
 
 describe.sequential("Authentik thread roles", () => {
+  it("treats archive as leaving the thread for every non-owner role", async () => {
+    const harness = await authenticatedHarness();
+    try {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const thread = seedThread(harness.deps, { projectId: project.id });
+      const owner = userSession(harness, {
+        email: "owner@example.test",
+        role: "owner",
+        threadId: thread.id,
+      });
+      const nonOwners = ["maintainer", "member", "viewer"].map((role) =>
+        userSession(harness, {
+          email: `${role}@example.test`,
+          role: role as "maintainer" | "member" | "viewer",
+          threadId: thread.id,
+        }),
+      );
+
+      for (const actor of nonOwners) {
+        const response = await request(
+          harness,
+          `/threads/${thread.id}/archive-all`,
+          actor.cookie,
+          { method: "POST" },
+        );
+        expect(response.status).toBe(200);
+        expect(await readJson(response)).toEqual({
+          ok: true,
+          archivedThreadIds: [thread.id],
+        });
+        expect(
+          (await request(harness, `/threads/${thread.id}`, actor.cookie))
+            .status,
+        ).toBe(404);
+        const list = (await readJson(
+          await request(harness, "/threads", actor.cookie),
+        )) as Array<{ id: string }>;
+        expect(list.map((row) => row.id)).not.toContain(thread.id);
+        expect(getThread(harness.db, thread.id)?.archivedAt).toBeNull();
+      }
+
+      expect(
+        (await request(harness, `/threads/${thread.id}`, owner.cookie)).status,
+      ).toBe(200);
+      expect(
+        (
+          await request(
+            harness,
+            `/threads/${thread.id}/archive-all`,
+            owner.cookie,
+            { method: "POST" },
+          )
+        ).status,
+      ).toBe(200);
+      expect(getThread(harness.db, thread.id)?.archivedAt).not.toBeNull();
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   it("enforces viewer, member, maintainer, and owner capabilities end to end", async () => {
     const harness = await authenticatedHarness();
     try {

@@ -118,6 +118,7 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
     const userId = context.req.param("userId");
     const existing = requireParticipantRow(deps, threadId, userId);
     if (existing.role === "owner") requireAnotherOwner(deps, threadId, userId);
+    deps.hub.notifyThread(threadId, ["read-state-changed"]);
     if (!revokeThreadParticipant(deps.db, { threadId, userId })) {
       throw new ApiError(
         404,

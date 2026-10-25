@@ -21,7 +21,8 @@ import { useDebouncedValue } from "../useDebouncedValue";
 import { routeTaggedPages, routeTaggedRead } from "./route-tags";
 import { applyTimelineDelta, publicApiRoutes } from "@bb/server-contract";
 import type { ThreadListFilters } from "@bb/client-core";
-import { sdk } from "@/lib/sdk";
+import { BbHttpError, sdk } from "@/lib/sdk";
+import { invalidateThreadListQueries } from "../cache-owners/mutation-cache-effects";
 import {
   useThreadDetailRealtimeSubscription,
   useThreadListRealtimeSubscription,
@@ -73,6 +74,15 @@ export interface QueryOptions {
   enabled?: boolean;
   refetchOnMount?: boolean | "always";
   staleTime?: number;
+}
+
+function refreshThreadListsAfterNotFound(
+  queryClient: QueryClient,
+  error: unknown,
+): void {
+  if (error instanceof BbHttpError && error.status === 404) {
+    invalidateThreadListQueries({ queryClient });
+  }
 }
 
 export const THREAD_LIST_STALE_TIME_MS = 10_000;
@@ -710,11 +720,17 @@ export function threadQueryOptions(
       queryKey,
       publicApiRoutes.threads.get,
       { params: { id }, input: {} },
-      (signal) =>
-        sdk.threads.get({
-          threadId: requireThreadId(id, "useThread"),
-          signal,
-        }),
+      async (signal) => {
+        try {
+          return await sdk.threads.get({
+            threadId: requireThreadId(id, "useThread"),
+            signal,
+          });
+        } catch (error) {
+          refreshThreadListsAfterNotFound(queryClient, error);
+          throw error;
+        }
+      },
     ),
     enabled: (options?.enabled ?? true) && Boolean(id),
     staleTime: THREAD_DETAIL_STALE_TIME_MS,
@@ -776,11 +792,17 @@ export function threadDetailBootstrapQueryOptions(
         });
       }
 
-      const thread = await sdk.threads.get({
-        include: "environment,host",
-        threadId,
-        signal,
-      });
+      let thread: ThreadWithIncludesResponse;
+      try {
+        thread = await sdk.threads.get({
+          include: "environment,host",
+          threadId,
+          signal,
+        });
+      } catch (error) {
+        refreshThreadListsAfterNotFound(queryClient, error);
+        throw error;
+      }
       ingestThreadDetailBootstrap({
         queryClient,
         thread,

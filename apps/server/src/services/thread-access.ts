@@ -81,6 +81,7 @@ export function threadCapabilityForRequest(
   path: string,
 ): ThreadCapability {
   if (method === "GET") return "read";
+  if (path.endsWith("/archive-all")) return "read";
   if (
     /\/(?:send|retry|messages|queued-messages|interactions)(?:\/|$)/u.test(path)
   ) {

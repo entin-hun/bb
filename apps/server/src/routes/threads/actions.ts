@@ -8,6 +8,7 @@ import {
   pinThread,
   reorderPinnedThread,
   reorderQueuedThreadMessage,
+  revokeThreadParticipant,
   setQueuedThreadMessageGroupBoundary,
   unarchiveThread,
   unpinThread,
@@ -89,6 +90,7 @@ import {
   LIVE_DAEMON_COMMAND_TIMEOUT_MS,
   runLiveHostCommand,
 } from "../../services/hosts/live-command.js";
+import { requireThreadCapability } from "../../services/thread-access.js";
 
 function toQueuedMessageOrderResponse(
   result: ReorderQueuedThreadMessageResult,
@@ -547,6 +549,20 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.archiveAll, (context) => {
     const thread = requirePublicThread(deps.db, context.req.param("id"));
+    const participant = requireThreadCapability(
+      deps,
+      context,
+      thread.id,
+      "read",
+    );
+    if (participant !== null && participant.role !== "owner") {
+      deps.hub.notifyThread(thread.id, ["read-state-changed"]);
+      revokeThreadParticipant(deps.db, {
+        threadId: thread.id,
+        userId: participant.userId,
+      });
+      return context.json({ ok: true, archivedThreadIds: [thread.id] });
+    }
     const archivedThreadIds = archiveThreadAndChildren(deps, {
       parentThread: thread,
     });
