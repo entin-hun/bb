@@ -418,6 +418,9 @@ export function settleArchiveThreadsTransaction({
   for (const threadId of response?.archivedThreadIds ??
     transaction?.archivedThreadIds ??
     []) {
+    if (response?.accessRevoked === true) {
+      removeThreadScopedQueries({ queryClient, threadId });
+    }
     queryClient.invalidateQueries({ queryKey: threadQueryKey(threadId) });
   }
 }

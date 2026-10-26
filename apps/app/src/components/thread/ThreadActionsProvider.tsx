@@ -449,46 +449,55 @@ export function ThreadActionsProvider({
             viewedRouteRef.current = archiveDestination;
           }
           const toastId = `thread-archived-${thread.id}`;
-          appToast.success("Thread archived", {
-            description: (
-              <ArchivedThreadToastDescription
-                archivedThreadCount={response.archivedThreadIds.length}
-                threadTitle={getThreadDisplayTitle(thread)}
-                onOpenThread={() => {
-                  navigate(
-                    getThreadRoutePath({
-                      projectId: thread.projectId,
-                      threadId: thread.id,
-                    }),
-                  );
-                  appToast.dismiss(toastId);
-                }}
-              />
-            ),
-            cancel: {
-              label: "Undo",
-              onClick: () => {
-                const shouldReturnToThread =
-                  archiveDestination !== null &&
-                  viewedRouteRef.current === archiveDestination;
-                for (const threadId of [
-                  ...response.archivedThreadIds,
-                ].reverse()) {
-                  unarchiveMutate({ id: threadId });
-                }
-                if (shouldReturnToThread) {
-                  navigate(
-                    getThreadRoutePath({
-                      projectId: thread.projectId,
-                      threadId: thread.id,
-                    }),
-                  );
-                }
-              },
+          appToast.success(
+            response.accessRevoked ? "Left thread" : "Thread archived",
+            {
+              description: response.accessRevoked ? (
+                `Removed ${getThreadDisplayTitle(thread)} from your threads.`
+              ) : (
+                <ArchivedThreadToastDescription
+                  archivedThreadCount={response.archivedThreadIds.length}
+                  threadTitle={getThreadDisplayTitle(thread)}
+                  onOpenThread={() => {
+                    navigate(
+                      getThreadRoutePath({
+                        projectId: thread.projectId,
+                        threadId: thread.id,
+                      }),
+                    );
+                    appToast.dismiss(toastId);
+                  }}
+                />
+              ),
+              ...(response.accessRevoked
+                ? {}
+                : {
+                    cancel: {
+                      label: "Undo",
+                      onClick: () => {
+                        const shouldReturnToThread =
+                          archiveDestination !== null &&
+                          viewedRouteRef.current === archiveDestination;
+                        for (const threadId of [
+                          ...response.archivedThreadIds,
+                        ].reverse()) {
+                          unarchiveMutate({ id: threadId });
+                        }
+                        if (shouldReturnToThread) {
+                          navigate(
+                            getThreadRoutePath({
+                              projectId: thread.projectId,
+                              threadId: thread.id,
+                            }),
+                          );
+                        }
+                      },
+                    },
+                  }),
+              duration: ARCHIVE_UNDO_TOAST_DURATION_MS,
+              id: toastId,
             },
-            duration: ARCHIVE_UNDO_TOAST_DURATION_MS,
-            id: toastId,
-          });
+          );
         },
         (error: unknown) => {
           if (error instanceof ArchiveThreadConfirmationRequired) {

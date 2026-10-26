@@ -120,6 +120,7 @@ describe.sequential("Authentik thread roles", () => {
         expect(await readJson(response)).toEqual({
           ok: true,
           archivedThreadIds: [thread.id],
+          accessRevoked: true,
         });
         expect(
           (await request(harness, `/threads/${thread.id}`, actor.cookie))

@@ -84,6 +84,7 @@ describe("archive without an attached environment", () => {
       expect(await readJson(response)).toEqual({
         ok: true,
         archivedThreadIds: [thread.id],
+        accessRevoked: false,
       });
       expect(getThread(harness.deps.db, thread.id)?.archivedAt).not.toBeNull();
     });
@@ -102,6 +103,7 @@ describe("archive without an attached environment", () => {
         expect(await readJson(response)).toEqual({
           ok: true,
           archivedThreadIds: [thread.id],
+          accessRevoked: false,
         });
         expect(getThread(harness.deps.db, thread.id)).toMatchObject({
           archivedAt: expect.any(Number),

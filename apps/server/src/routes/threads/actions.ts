@@ -561,7 +561,11 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
         threadId: thread.id,
         userId: participant.userId,
       });
-      return context.json({ ok: true, archivedThreadIds: [thread.id] });
+      return context.json({
+        ok: true,
+        archivedThreadIds: [thread.id],
+        accessRevoked: true,
+      });
     }
     const archivedThreadIds = archiveThreadAndChildren(deps, {
       parentThread: thread,
@@ -569,6 +573,7 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
     return context.json({
       ok: true,
       archivedThreadIds,
+      accessRevoked: false,
     });
   });
 

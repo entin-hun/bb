@@ -869,6 +869,7 @@ export type ThreadPaneActionResponse = z.infer<
 export const threadArchiveAllResponseSchema = z.object({
   ok: z.literal(true),
   archivedThreadIds: z.array(z.string().min(1)),
+  accessRevoked: z.boolean().optional(),
 });
 export type ThreadArchiveAllResponse = z.infer<
   typeof threadArchiveAllResponseSchema

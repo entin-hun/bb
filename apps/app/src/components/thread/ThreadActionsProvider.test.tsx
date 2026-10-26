@@ -20,6 +20,7 @@ import {
 import {
   sidebarNavigationQueryKey,
   threadListQueryKey,
+  threadQueryKey,
 } from "@/hooks/queries/query-keys";
 import { getCachedSidebarNavigationThreads } from "@/hooks/cache-owners/query-cache";
 import { appToast } from "@/components/ui/app-toast";
@@ -198,6 +199,29 @@ afterEach(() => {
 });
 
 describe("ThreadActionsProvider archive confirmation", () => {
+  it("removes a non-owner's revoked thread without offering an invalid undo", async () => {
+    mocks.confirmThreadArchive = false;
+    const thread = makeThread();
+    queryClient.setQueryData(threadQueryKey(thread.id), thread);
+    vi.mocked(sdk.threads.archiveAll).mockResolvedValueOnce({
+      accessRevoked: true,
+      archivedThreadIds: [thread.id],
+      ok: true,
+    });
+
+    renderProvider(<ArchiveButton thread={thread} />);
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    await vi.waitFor(() =>
+      expect(appToast.success).toHaveBeenCalledWith(
+        "Left thread",
+        expect.not.objectContaining({ cancel: expect.anything() }),
+      ),
+    );
+    expect(queryClient.getQueryData(threadQueryKey(thread.id))).toBeUndefined();
+    expect(sdk.threads.unarchive).not.toHaveBeenCalled();
+  });
+
   it("archives parent and children immediately when confirmation is disabled", async () => {
     mocks.confirmThreadArchive = false;
     renderProvider(<ArchiveButton thread={makeThread()} />);
