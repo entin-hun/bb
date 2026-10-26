@@ -99,3 +99,12 @@ provider-recordings/raw/
 /plugins/*/.bundled-runtime/
 
 .ci-health/
+
+# Local state used by self-hosted development deployments. Enumerating these
+# caches as untracked files can exceed the host daemon's git-status buffer.
+/.corepack/
+/.home/
+/.live-data/
+/.live-runtime/
+/.logs/
+/.npm-cache/

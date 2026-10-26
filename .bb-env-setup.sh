@@ -51,6 +51,23 @@ if [ ! -f package.json ]; then
   exit 0
 fi
 
+# A fresh bb checkout needs several gigabytes for this monorepo. Starting the
+# install on a nearly full host is worse than skipping it: pnpm can exhaust the
+# filesystem before provisioning finishes and take the running bb server down
+# with it. The agent can still inspect and edit the checkout without installed
+# dependencies.
+available_kb="$(df -Pk . 2>/dev/null | awk 'NR == 2 { print $4 }')"
+minimum_install_kb=6291456
+case "${available_kb}" in
+  ''|*[!0-9]*) ;;
+  *)
+    if [ "${available_kb}" -lt "${minimum_install_kb}" ]; then
+      log "Warning: less than 6 GiB is available; skipping pnpm install"
+      exit 0
+    fi
+    ;;
+esac
+
 current_hash="$(install_inputs_hash 2>/dev/null || true)"
 
 if [ -n "${current_hash}" ] && [ -f "${INSTALL_STAMP}" ] && [ -d node_modules/.pnpm ]; then
