@@ -190,6 +190,10 @@ change the host-daemon protocol.
 | `BB_SKIP_ONBOARDING`           | Environment                                        | Startup-only            | Default false. `1` marks first-run setup completed at startup when it is not yet, so the setup screen is skipped. Settings → General can still replay it. `pnpm dev`, `pnpm start:worktree`, and `pnpm desktop:worktree` default it to `1`; an explicit `0` retains setup. |
 | `BB_PERF_DIAGNOSTICS`          | `bb-app env`, environment, or `--perf-diagnostics` | Startup-only            | Default false. Permits the `performanceDiagnostics` experiment; see [Experiments](#experiments).                                                                                                                                                                           |
 | `BB_CLI_ERROR_LOG`             | Environment of the `bb` process                    | Optional                | `0` stops the CLI recording failed invocations (command path, error code, no argument values) to `<dataDir>/logs/cli-errors.jsonl`. See `bb guide overview`.                                                                                                               |
+| `BB_AUTHENTIK_ISSUER`          | `bb-app env`, or environment                       | Authentik login         | Authentik OpenID Connect issuer URL. Set this together with `BB_AUTHENTIK_CLIENT_ID`, `BB_AUTHENTIK_CLIENT_SECRET`, and a public origin to require Authentik login and enable per-user thread access control.                                                              |
+| `BB_AUTHENTIK_CLIENT_ID`       | `bb-app env`, or environment                       | Authentik login         | OpenID Connect client id for the Authentik provider.                                                                                                                                                                                                                       |
+| `BB_AUTHENTIK_CLIENT_SECRET`   | `bb-app env`, or environment                       | Authentik login         | OpenID Connect client secret for the Authentik provider. Treat this value as a secret.                                                                                                                                                                                     |
+| `BB_PUBLIC_ORIGIN`             | `bb-app env`, or environment                       | Authentik login         | Public browser origin used for the Authentik callback. Defaults to `BB_APP_URL`; when set explicitly it must be the externally reachable origin without a path.                                                                                                            |
 | `BB_ACCOUNT_POOL_PARENT_URL`   | Set automatically by a parent bb server            | Nested bb servers       | Account Pooler hub of the bb server whose thread launched this one. When present the Account Pooler plugin is enabled on first run and proxies to that parent; `bb pool parent isolate` opts out. Not a `bb-app config` key.                                               |
 | `BB_ACCOUNT_POOL_PARENT_TOKEN` | Set automatically by a parent bb server            | Nested bb servers       | Machine token this nested server presents to the parent hub. Both parent variables must be well formed or proxying stays off.                                                                                                                                              |
 
@@ -200,6 +204,30 @@ connecting, including from the CLI or SDK; a matching `Host`/`Origin` or
 `X-Forwarded-Host` cannot authorize an unconfigured name. A proxy can preserve
 the configured host or forward to localhost. bb connect needs no additional
 configuration.
+
+### Authentik login and thread access
+
+Authentik login is opt-in. Create an OAuth2/OpenID Connect provider in
+Authentik with an exact redirect URI of
+`https://bb.example.com/auth/authentik/callback`, then configure all three
+`BB_AUTHENTIK_*` variables above. Also set `BB_APP_URL` to the externally
+reachable bb origin, or set `BB_PUBLIC_ORIGIN` when the callback origin must be
+different. Restart bb after changing these startup-only environment values.
+
+When enabled, browser and remote API access require an Authentik session.
+Threads have an owner and can be shared with maintainer, member, or viewer
+roles. Viewers can read; members can also post; maintainers can manage
+participants and invitations; owners can additionally change roles, remove
+participants, and delete threads. Agent-created children and forks inherit the
+source thread's active participants. A non-owner who archives a shared thread
+leaves it instead, so it disappears from that user's thread list without
+archiving it for the other participants.
+
+Use the app's **Share** action or the `bb thread participant` and
+`bb thread invite` commands documented in `bb guide thread-inspection`. A
+remote CLI can authenticate with an active session id in
+`BB_AUTHENTIK_SESSION`; processes trusted as local server automation continue
+to use the built-in system identity.
 
 ## General settings
 
