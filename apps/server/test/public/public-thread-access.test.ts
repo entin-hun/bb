@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { readJson } from "../helpers/json.js";
 import {
   seedHostSession,
+  seedEnvironment,
   seedProjectWithSource,
   seedThread,
 } from "../helpers/seed.js";
@@ -88,6 +89,82 @@ function request(
 }
 
 describe.sequential("Authentik thread roles", () => {
+  it("allows only owners to archive environments or unarchive threads", async () => {
+    const harness = await authenticatedHarness();
+    try {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+      });
+      const thread = seedThread(harness.deps, {
+        environmentId: environment.id,
+        projectId: project.id,
+      });
+      const owner = userSession(harness, {
+        email: "owner@example.test",
+        role: "owner",
+        threadId: thread.id,
+      });
+      const maintainer = userSession(harness, {
+        email: "maintainer@example.test",
+        role: "maintainer",
+        threadId: thread.id,
+      });
+
+      expect(
+        (
+          await request(
+            harness,
+            `/environments/${environment.id}/archive-threads`,
+            maintainer.cookie,
+            { method: "POST" },
+          )
+        ).status,
+      ).toBe(403);
+      expect(getThread(harness.db, thread.id)?.archivedAt).toBeNull();
+
+      expect(
+        (
+          await request(
+            harness,
+            `/threads/${thread.id}/archive-all`,
+            owner.cookie,
+            { method: "POST" },
+          )
+        ).status,
+      ).toBe(200);
+      expect(getThread(harness.db, thread.id)?.archivedAt).not.toBeNull();
+      expect(
+        (
+          await request(
+            harness,
+            `/threads/${thread.id}/unarchive`,
+            maintainer.cookie,
+            { method: "POST" },
+          )
+        ).status,
+      ).toBe(403);
+      expect(getThread(harness.db, thread.id)?.archivedAt).not.toBeNull();
+      expect(
+        (
+          await request(
+            harness,
+            `/threads/${thread.id}/unarchive`,
+            owner.cookie,
+            { method: "POST" },
+          )
+        ).status,
+      ).toBe(200);
+      expect(getThread(harness.db, thread.id)?.archivedAt).toBeNull();
+    } finally {
+      await harness.cleanup();
+    }
+  });
+
   it("treats archive as leaving the thread for every non-owner role", async () => {
     const harness = await authenticatedHarness();
     try {

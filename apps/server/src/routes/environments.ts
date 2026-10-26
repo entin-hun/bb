@@ -9,6 +9,7 @@ import {
   countLiveThreadsInEnvironment,
   listDiffViewedFiles,
   listEnvironments,
+  listLiveThreadsInEnvironment,
   markDiffViewedFile,
   updateEnvironmentMetadata,
   type DiffViewedFileScope,
@@ -56,6 +57,10 @@ import {
 } from "../services/hosts/daemon-file-response.js";
 import { generateCommitMessage } from "../services/ai/commit-message.js";
 import { archiveEnvironmentThreads } from "../services/threads/thread-archive.js";
+import {
+  requestThreadUserId,
+  userHasThreadCapability,
+} from "../services/thread-access.js";
 import {
   normalizeBranchQuery,
   parseBranchListLimit,
@@ -309,6 +314,21 @@ export function registerEnvironmentRoutes(app: Hono, deps: AppDeps): void {
 
   post(routes.archiveThreads, (context) => {
     const environment = requireEnvironment(deps.db, context.req.param("id"));
+    const userId = requestThreadUserId(context);
+    if (
+      userId !== null &&
+      listLiveThreadsInEnvironment(deps.db, {
+        environmentId: environment.id,
+      }).some(
+        (thread) => !userHasThreadCapability(deps, userId, thread.id, "own"),
+      )
+    ) {
+      throw new ApiError(
+        403,
+        "forbidden",
+        "Only thread owners can archive all threads in an environment",
+      );
+    }
     const archivedThreadIds = archiveEnvironmentThreads(deps, { environment });
     return context.json({
       ok: true,

@@ -82,6 +82,7 @@ export function threadCapabilityForRequest(
 ): ThreadCapability {
   if (method === "GET") return "read";
   if (path.endsWith("/archive-all")) return "read";
+  if (path.endsWith("/unarchive")) return "own";
   if (
     /\/(?:send|retry|messages|queued-messages|interactions)(?:\/|$)/u.test(path)
   ) {
