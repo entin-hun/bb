@@ -460,6 +460,7 @@ type ThreadRow = typeof threads.$inferSelect;
 export interface ListThreadsForProjectsOptions {
   projectIds: readonly string[];
   archived?: boolean;
+  threadIds?: readonly string[];
 }
 
 export interface PinThreadArgs {
@@ -748,6 +749,9 @@ function buildListThreadsForProjectsFilters(
 ) {
   return [
     inArray(threads.projectId, [...options.projectIds]),
+    options.threadIds === undefined
+      ? undefined
+      : inArray(threads.id, [...options.threadIds]),
     eq(threads.visibility, "visible"),
     nonDeletedThreads(),
     options.archived === true
@@ -1515,7 +1519,7 @@ export function listThreadsWithPendingInteractionStateForProjects(
   db: DbConnection,
   options: ListThreadsForProjectsOptions,
 ): ThreadWithPendingInteractionState[] {
-  if (options.projectIds.length === 0) {
+  if (options.projectIds.length === 0 || options.threadIds?.length === 0) {
     return [];
   }
 

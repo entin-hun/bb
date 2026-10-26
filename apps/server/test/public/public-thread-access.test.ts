@@ -207,6 +207,17 @@ describe.sequential("Authentik thread roles", () => {
           await request(harness, "/threads", actor.cookie),
         )) as Array<{ id: string }>;
         expect(list.map((row) => row.id)).not.toContain(thread.id);
+        const sidebar = (await readJson(
+          await request(harness, "/sidebar-bootstrap", actor.cookie),
+        )) as {
+          personalProject: { threads: Array<{ id: string }> };
+          projects: Array<{ threads: Array<{ id: string }> }>;
+        };
+        const sidebarThreadIds = [
+          ...sidebar.personalProject.threads,
+          ...sidebar.projects.flatMap((project) => project.threads),
+        ].map((row) => row.id);
+        expect(sidebarThreadIds).not.toContain(thread.id);
         expect(getThread(harness.db, thread.id)?.archivedAt).toBeNull();
       }
 

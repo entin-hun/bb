@@ -109,6 +109,7 @@ import {
   resolveProjectCommandWorkspace,
   resolveProjectWorkspaceTarget,
 } from "../services/projects/project-workspace.js";
+import { requestAccessibleThreadIds } from "../services/thread-access.js";
 
 type ProjectResponseProjectFields = Omit<ProjectResponse, "sources">;
 
@@ -217,22 +218,31 @@ function parseProjectListIncludes(
 function buildProjectsWithThreadsResponse(
   deps: AppDeps,
   options: ProjectListOptions,
+  accessibleThreadIds: string[] | null,
 ): ProjectWithThreadsResponse[] {
   return buildProjectsWithThreadsResponseFromRows(
     deps,
     listDiscoverableProjects(deps, options),
+    accessibleThreadIds,
   );
 }
 
 function buildProjectsWithThreadsResponseFromRows(
   deps: AppDeps,
   projectRows: ProjectResponseProjectFields[],
+  accessibleThreadIds: string[] | null,
 ): ProjectWithThreadsResponse[] {
   const projects = buildProjectResponsesFromRows(deps, projectRows);
   const projectIds = projects.map((project) => project.id);
   const threadRows = listThreadsWithPendingInteractionStateForProjects(
     deps.db,
-    { archived: false, projectIds },
+    {
+      archived: false,
+      projectIds,
+      ...(accessibleThreadIds === null
+        ? {}
+        : { threadIds: accessibleThreadIds }),
+    },
   );
   const threadResponses = toThreadListEntryResponses(deps, {
     threads: threadRows,
@@ -261,7 +271,10 @@ function buildProjectsWithThreadsResponseFromRows(
   }));
 }
 
-function buildSidebarBootstrapResponse(deps: AppDeps) {
+function buildSidebarBootstrapResponse(
+  deps: AppDeps,
+  accessibleThreadIds: string[] | null,
+) {
   const personalProject = getPersonalProject(deps.db);
   if (!personalProject) {
     throw new ApiError(
@@ -273,6 +286,7 @@ function buildSidebarBootstrapResponse(deps: AppDeps) {
   const personalProjectResponse = buildProjectsWithThreadsResponseFromRows(
     deps,
     [personalProject],
+    accessibleThreadIds,
   )[0];
   if (!personalProjectResponse) {
     throw new ApiError(
@@ -286,6 +300,7 @@ function buildSidebarBootstrapResponse(deps: AppDeps) {
     projects: buildProjectsWithThreadsResponseFromRows(
       deps,
       listPublicProjects(deps.db),
+      accessibleThreadIds,
     ),
     personalProject: personalProjectResponse,
   };
@@ -454,7 +469,13 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
       includePersonal: query.includePersonal === "true",
     };
     if (includes.has("threads")) {
-      return context.json(buildProjectsWithThreadsResponse(deps, options));
+      return context.json(
+        buildProjectsWithThreadsResponse(
+          deps,
+          options,
+          requestAccessibleThreadIds(deps, context),
+        ),
+      );
     }
     return context.json(
       buildProjectResponsesFromRows(
@@ -465,7 +486,12 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
   });
 
   get(routes.sidebarBootstrap, (context) =>
-    context.json(buildSidebarBootstrapResponse(deps)),
+    context.json(
+      buildSidebarBootstrapResponse(
+        deps,
+        requestAccessibleThreadIds(deps, context),
+      ),
+    ),
   );
 
   post(routes.create, async (context, payload) => {
