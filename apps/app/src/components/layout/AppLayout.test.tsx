@@ -27,6 +27,7 @@ import { CompactViewportOverrideProvider } from "@bb/shared-ui/hooks/use-compact
 import { setCompactSecondaryPanelPresentation } from "@/components/ui/secondary-panel-shelf-visibility";
 
 import { createQueryClientTestHarness } from "@/test/queryClientTestHarness";
+import { BbHttpError } from "@/lib/sdk";
 
 function render(ui: ReactNode) {
   return renderReact(ui, { wrapper: createQueryClientTestHarness().wrapper });
@@ -36,6 +37,7 @@ const useThreadDetailBootstrapMock = vi.hoisted(() =>
   vi.fn(
     (): {
       data?: { projectId: string };
+      error?: unknown;
       isError: boolean;
       isSuccess: boolean;
     } => ({ isError: false, isSuccess: false }),
@@ -251,6 +253,25 @@ afterEach(() => {
 });
 
 describe("canonical thread routes", () => {
+  it("returns an inaccessible thread route to the start-thread screen", async () => {
+    useThreadDetailBootstrapMock.mockReturnValue({
+      error: new BbHttpError({
+        status: 404,
+        code: "thread_not_found",
+        message: "Thread not found",
+        body: { code: "thread_not_found", message: "Thread not found" },
+      }),
+      isError: true,
+      isSuccess: false,
+    });
+
+    renderLayout(APP_ROUTE);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location").textContent).toBe("/"),
+    );
+  });
+
   it.each([
     [
       "/threads/thr_one?message=12#event-12",

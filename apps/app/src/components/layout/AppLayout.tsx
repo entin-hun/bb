@@ -54,6 +54,7 @@ import {
 } from "@/hooks/queries/thread-queries";
 import { useRouteState } from "@/hooks/useRouteState";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
+import { asHttpError } from "@/lib/http-error";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { APP_OVERLAY_LAYER } from "@/components/ui/app-overlay-layers";
 import {
@@ -593,6 +594,10 @@ function AppLayoutContent({ children }: AppLayoutProps) {
           threadId,
         })
       : null;
+  const isInaccessibleThreadRoute =
+    isThreadView &&
+    threadDetailBootstrapQuery.isError &&
+    asHttpError(threadDetailBootstrapQuery.error)?.status === 404;
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const startXRef = useRef(0);
   const startWidthRef = useRef(0);
@@ -793,6 +798,10 @@ function AppLayoutContent({ children }: AppLayoutProps) {
     if (typeof document === "undefined") return;
     document.title = documentTitle;
   }, [documentTitle]);
+
+  if (isInaccessibleThreadRoute) {
+    return <Navigate to={getRootComposeRoutePath()} replace />;
+  }
 
   if (canonicalThreadRoutePath !== null) {
     return (
