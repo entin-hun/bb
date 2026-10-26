@@ -67,6 +67,7 @@ export const SYSTEM_CHANGE_KINDS = [
   "plugin-update-jobs-changed",
   "provider-registrations-changed",
   "environment-availability-changed",
+  "thread-access-changed",
   "server-move-changed",
   "app-update-changed",
 ] as const;

@@ -59,6 +59,7 @@ import {
 } from "./queries/query-keys";
 import { pluginContributionsQueryKey } from "./queries/query-keys";
 import { systemEnvironmentProvidersQueryKey } from "./queries/environment-provider-queries";
+import { threadAccessQueryKey } from "./queries/thread-access-queries";
 import {
   createRealtimeCacheEffects,
   resolveThreadInvalidationDebounce,
@@ -472,6 +473,28 @@ describe("createRealtimeCacheEffects", () => {
 
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true);
     expect(queryClient.getQueryState(configKey)?.isInvalidated).toBe(false);
+    effects.dispose();
+  });
+
+  it("refreshes sidebar and thread caches after access changes", () => {
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const threadListKey = threadListQueryKey({ archived: false });
+    const sidebarKey = sidebarNavigationQueryKey();
+    const threadKey = threadQueryKey("thr_revoked");
+    const accessKey = threadAccessQueryKey("thr_revoked");
+    for (const key of [threadListKey, sidebarKey, threadKey, accessKey]) {
+      queryClient.setQueryData(key, {});
+    }
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "system",
+      changes: ["thread-access-changed"],
+    });
+
+    for (const key of [threadListKey, sidebarKey, threadKey, accessKey]) {
+      expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true);
+    }
     effects.dispose();
   });
 

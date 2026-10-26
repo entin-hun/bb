@@ -565,6 +565,17 @@ export const REALTIME_SYSTEM_CHANGE_REGISTRY = {
   "environment-availability-changed": {
     dirty: [dirtyEnvironmentProviderQueries],
   },
+  "thread-access-changed": {
+    dirty: [
+      () => [
+        threadsQueryKey(),
+        sidebarNavigationQueryKey(),
+        threadSearchQueryKeyPrefix(),
+        allThreadQueryKeyPrefix(),
+        ["thread-access"],
+      ],
+    ],
+  },
   "server-move-changed": {
     dirty: [dirtyServerMoveStatusQueries],
   },

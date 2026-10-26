@@ -97,6 +97,8 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
       threadId,
       userId: user.id,
     });
+    deps.hub.notifyThread(threadId, ["read-state-changed"]);
+    deps.hub.notifySystem(["thread-access-changed"]);
     return context.json(requireParticipantRow(deps, threadId, user.id), 201);
   });
 
@@ -109,6 +111,8 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
       requireAnotherOwner(deps, threadId, userId);
     }
     upsertThreadParticipant(deps.db, { role: payload.role, threadId, userId });
+    deps.hub.notifyThread(threadId, ["read-state-changed"]);
+    deps.hub.notifySystem(["thread-access-changed"]);
     return context.json(requireParticipantRow(deps, threadId, userId));
   });
 
@@ -118,7 +122,6 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
     const userId = context.req.param("userId");
     const existing = requireParticipantRow(deps, threadId, userId);
     if (existing.role === "owner") requireAnotherOwner(deps, threadId, userId);
-    deps.hub.notifyThread(threadId, ["read-state-changed"]);
     if (!revokeThreadParticipant(deps.db, { threadId, userId })) {
       throw new ApiError(
         404,
@@ -126,6 +129,8 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
         "Thread participant not found",
       );
     }
+    deps.hub.notifyThread(threadId, ["read-state-changed"]);
+    deps.hub.notifySystem(["thread-access-changed"]);
     return context.json({ ok: true as const });
   });
 
@@ -220,6 +225,8 @@ export function registerThreadAccessRoutes(app: Hono, deps: AppDeps): void {
       threadId: invite.threadId,
       userId: user.id,
     });
+    deps.hub.notifyThread(invite.threadId, ["read-state-changed"]);
+    deps.hub.notifySystem(["thread-access-changed"]);
     return context.json(requireParticipantRow(deps, invite.threadId, user.id));
   });
 }

@@ -556,11 +556,12 @@ export function registerThreadActionRoutes(app: Hono, deps: AppDeps): void {
       "read",
     );
     if (participant !== null && participant.role !== "owner") {
-      deps.hub.notifyThread(thread.id, ["read-state-changed"]);
       revokeThreadParticipant(deps.db, {
         threadId: thread.id,
         userId: participant.userId,
       });
+      deps.hub.notifyThread(thread.id, ["read-state-changed"]);
+      deps.hub.notifySystem(["thread-access-changed"]);
       return context.json({
         ok: true,
         archivedThreadIds: [thread.id],
